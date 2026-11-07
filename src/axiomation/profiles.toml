@@ -1,0 +1,328 @@
+# Review profiles: axiomation review-cut PAPER --profile NAME.
+# A flag given on the command line overrides one value. Your own profiles:
+# a file of this form, given with --profiles FILE. Prices are the models'
+# own, in prices.toml; the budget is the run's (--budget).
+
+[standard]
+description = "the quality recipe: Opus 5.5 on Claude Code, the vocabulary map on Sonnet 5.5"
+chunk_characters = 500000       # most characters a session reads: a number, or "paper" for all
+context_blocks = 2              # blocks shown past each chunk edge: 0 or more
+show_outline = false            # give boundary sessions the paper's outline: true or false
+boundary_passes = 1             # author passes over the cut, each judged if on: 1 or more
+judge_boundaries = false        # judge each author pass: true or false. Off: on Opus it kept
+                                # every over-cut it was shown
+role_passes = 1                 # first gives roles, later ones review them: 1 or more
+group_passes = 1                # first marks groups, later ones correct them: 1 or more
+edge_passes = 2                 # first writes the edges, later ones review them: 1 or more;
+                                # 2, the second by target
+cut_rounds = 0                  # rounds that apply the edges' cut corrections and ask again
+                                # what they touch: 0 or more (0: unmeasured)
+decide_passes = 0               # a deciding step after the groups reviews the whole cut with
+                                # the stages' flags: 0 or 1 (0: unmeasured)
+show_rule_flags_in_edge_review = false  # show each later edges pass the rules' flags on the
+                                # edges written (every qualifies; a definition using a
+                                # whole claim block): true or false (off: unmeasured)
+followup_sessions_max = 1       # an update's follow-up sessions on what its first session's
+                                # answer reveals (a Δ on an unchanged block, a dropped uses
+                                # edge, a new part's words): 0 or 1; 0 reports them unasked
+reverse_prefilter = true        # an update's follow-up also opens the blocks that write a new
+                                # part's words with no edge onto it: true or false
+                                # (off if it finds nothing true)
+# fresh_edges_above_reopened_fraction = 0.5  # past this share of the blocks open in an
+                                # update's first session, its edges are written fresh: 0 to 1;
+                                # unset, never
+per_stage_update_above_recut_blocks = 1000  # an update with more re-cut blocks than this
+                                # asks per stage (the re-cut's boundaries, their roles, the
+                                # groups, the edges, a follow-up); one with this many or
+                                # fewer is one session, asked as a queue of the blocks the
+                                # edit touched (claude-code alone): 0 or more; unset, every
+                                # update per stage (1000 in effect keeps every update to one
+                                # session; a guess, unmeasured on a sweeping edit)
+moved_delta_lines_max = 60      # an update's one session reads each block its Δ lines move by
+                                # rule and gives it a Δ line, `unchanged` closing the change
+                                # there; this many such lines at most, over the session; a
+                                # frontier that would pass it carries wholly, unread:
+                                # 0 or more (0, every moved block carries wholly)
+reread_marks_after_update = true  # an update that keeps a state with open stale marks
+                                # ends with a queue of the edges agent that rereads their
+                                # owners' lines against what changed (`reread --ask`), the
+                                # gates' marks first, from what is left of the budget: true
+                                # or false; `update --no-reread` skips it once
+search_support_after_edges = true  # a build or an update that keeps a state holding claims
+                                # standing unsupported that no search read ends with one
+                                # edges session searching the paper for their support
+                                # (`support --ask`), after the update's reread and before
+                                # the circles, from what is left of the budget: true or
+                                # false; `--no-search` skips it once
+ask_circles_after_edges = true  # a build or an update that keeps a state holding circles of
+                                # what claims rest on ends with a queue of the edges agent
+                                # asking what each end on them relies on (`circles --ask`),
+                                # after the update's reread and the search, from what is
+                                # left of the budget: true or false; `--no-circles` skips it
+                                # once
+session_timeout_seconds = 3600  # a session is ended after this long
+
+# Each stage's agent:
+#   harness  "claude-code" or "opencode"
+#   model    Claude Code: "opus", "sonnet", "haiku" or an id ("claude-opus-5-5");
+#            OpenCode: "provider/id" ("opencode/deepseek-v4.1-flash")
+#   effort   Claude Code: "low", "medium", "high", "xhigh" or "max";
+#            OpenCode: the model's variant (DeepSeek: "default", "high", "max").
+#            Optional: else your Claude Code setting, or OpenCode's default
+#   prompt_template  optional: a shipped template's name, or a .md file
+#            beside your profiles file; default the stage's shipped one.
+#            The roles' and the groups' sessions answer as lines: their
+#            template is a brief for lines (roles-lines, groups-lines),
+#            refused where it names no `paper.md`
+#   tools    Claude Code only, optional: the tools its sessions have, a list
+#            of names. Default for the edges stage and every review session
+#            but the citationcheck and methods sessions (queues, their tools
+#            their server's, `tools` refused) the reading tools, ["Bash", "Read", "Edit", "Write", "Grep",
+#            "Glob"]: no subagent but one the session's workspace defines,
+#            so no session forks itself. A session that answers as lines
+#            (the author's, the roles' first pass, the groups') and the
+#            vocabulary map's (the map, its check) have Bash, Read, Edit and
+#            Write, whatever this says. Default for the judge, the deciding step
+#            and the roles' later passes Claude Code's own set but the web
+#            (not yet measured with fewer)
+
+# The author: edits the cut's boundaries.
+[standard.boundaries]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+
+# The judge: keeps or declines the author's edits, when judge_boundaries.
+[standard.boundaries_judge]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+
+# The roles: gives each block its roles (claim, justification, ...).
+# Also takes review_prompt_template, the later passes' prompt.
+[standard.roles]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "xhigh"
+
+# The groups: marks blocks that belong together (a proof, a derivation).
+[standard.groups]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+
+# The edges: one session per paper writes every block's edges and every
+# claim's standing.
+# Also takes review_prompt_template, the later passes' section,
+# and update_prompt_template, an update's section (default
+# edges-update).
+[standard.edges]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+review_prompt_template = "edges-bytarget"  # the later pass reads the sheet by target
+
+# The support search (support --ask, and a build's or an update's end): a
+# queue of the claims standing unsupported, one at a time. The worker answers
+# each claim argued, with its line, or unargued; the settler confirms the
+# worker's line or answers the claim itself. Each is an agent on claude-code
+# alone (a queue session's tools are a tool server's; OpenCode serves none),
+# with its budget_share, its part of the run's budget against the other's.
+# A profile without this table searches in one step, on the edges' agent.
+# Its cost: about $0.05 for a run's sessions' starts, then about $0.021 a
+# claim.
+[standard.support_search]
+autocompact_tokens = 100000     # a session's context is compacted past this many tokens:
+                                # a whole number above 0; unset, never (a long queue
+                                # session reads its whole context every turn)
+
+[standard.support_search.worker]
+harness = "claude-code"
+model = "claude-haiku-5-5"
+effort = "low"
+budget_share = 1
+
+[standard.support_search.settler]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "low"
+budget_share = 4
+
+# The deciding step: after the groups, decides the cut over the whole paper
+# with every stage's flags in front of it, when decide_passes is 1.
+[standard.decide]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+
+# The vocabulary map, before the cut: what each name the reader's tables do
+# not know is for. Asked only where the paper has such a name. Sonnet: it
+# matches Opus on this map at about half the cost.
+[standard.vocabulary]
+harness = "claude-code"
+model = "claude-sonnet-5-5"
+effort = "medium"
+
+# The map's second round: confirms or overturns each name it answered none.
+[standard.vocabulary_check]
+harness = "claude-code"
+model = "claude-haiku-5-5"
+effort = "low"
+
+# The review sessions: each reads the whole paper at a kept state
+# and files its judgments and findings (axiomation review PAPER --session S).
+# With no --session, review and sync ask the seats asked_by_default (true
+# unless set): here the paper's own four. The field's three (contribution,
+# fieldresults, relatedwork) read the paper against its field, and their
+# answers change with the field more than with an edit: --session field
+# asks them, --session all every seat.
+# The argument reader: whether each proof establishes its claim (valid) and
+# whether each claim holds (true). About $6 a
+# run over a whole paper, $0.15 a subject scoped (--scope).
+[standard.review.argument]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "xhigh"
+
+# The citation reader: whether each cited work says what the citing sentence
+# says it says, at the page (cited, accurate). A queue of the citation sites,
+# a work's sites in a row: the finder points each at its pages, the reader is
+# served them and judges. At high, not xhigh: it sets a sentence beside a
+# page. Each is an agent on claude-code alone (a queue session's tools are a
+# tool server's), with its budget_share; without the finder table, the reader
+# finds its pages itself. About $4.20 for a paper of 57 citation sites,
+# the finder $0.09 of it.
+[standard.review.citationcheck]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+budget_share = 9
+
+[standard.review.citationcheck.finder]
+harness = "claude-code"
+model = "claude-haiku-5-5"
+effort = "low"
+budget_share = 1
+
+# The methods reader, asked as a queue (`methods_queue`): whether each
+# script a block uses computes what the block says it does (computed); its
+# `run` tool runs the script outside the sandbox, in the paper's
+# environment. As a queue it catches planted script defects at about $0.09
+# to $0.14 a session; as a file session, at $0.29 to $0.49.
+[standard.review.methods]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "xhigh"
+
+# The findings reader: how the paper reads (clarity), whether it matches its
+# field (domain), what each result is worth (worth), whether a result it
+# reports as computed shows its script (provenance); findings only, never a
+# judgment. At high: it reads in order, it checks no proof. About $1.50 a draw over a
+# whole paper.
+[standard.review.findings]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+
+# The contribution reader: whether each contribution the paper claims is
+# known (novelty), by block on the paper plain, on the web, the cited works
+# and works it fetches (its tool server's `cited_*` and `fetch`).
+# forager_model: the subagent that, given one contribution, searches the web
+# and the cited works, fetches what is worth reading and points at pages.
+# The reader judges sameness and priority. By block, about $1.40 a draw over
+# a whole paper (as a sheet with a searcher and a page finder, about $2.40).
+[standard.review.contribution]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+forager_model = "haiku"
+asked_by_default = false
+
+# The field's results reader: each result of the paper's field it uses with
+# no citation (literature), pointed to a work that states it. Its agent
+# reads the whole paper first, an inventory of the results the paper takes
+# from its field (its template); then a queue of them: the finder looks for
+# the work that states each, in the cited works and on the web, and points
+# at its pages; the reader, this agent, decides what the paper owes, on the
+# finder's pages and its own reads. Each step on claude-code alone (a queue
+# session's tools are a tool server's), with its budget_share. At five results a
+# session, about $1.60 a draw (the inventory $0.40, the finder $0.24, the
+# reader $0.95).
+[standard.review.fieldresults]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "high"
+budget_share = 9
+asked_by_default = false
+
+[standard.review.fieldresults.finder]
+harness = "claude-code"
+model = "claude-haiku-5-5"
+effort = "low"
+budget_share = 1
+
+# The literature reader, by block: the places of the paper a reader of its
+# field wants situated, asked of each part by a short list of kinds, and
+# the work a reader expects there, offered as suggestions (literature
+# where the paper places itself nowhere); its forager searches the web and
+# the cited works and points at pages, the reader reads them. At medium:
+# the judgment is general, not deep. About $1.05 a draw over a whole paper.
+[standard.review.relatedwork]
+harness = "claude-code"
+model = "claude-opus-5-5"
+effort = "medium"
+forager_model = "haiku"
+asked_by_default = false
+
+
+[cheap]
+description = "DeepSeek V4.1 Flash on OpenCode's Zen throughout; quality unmeasured"
+chunk_characters = 500000
+context_blocks = 2
+show_outline = false
+boundary_passes = 1
+judge_boundaries = false
+role_passes = 1
+group_passes = 1
+edge_passes = 1
+cut_rounds = 0
+decide_passes = 0
+followup_sessions_max = 1
+reverse_prefilter = true
+session_timeout_seconds = 3600
+reread_marks_after_update = false  # the reread, the search and the circles run as queue
+search_support_after_edges = false  # sessions, which OpenCode serves not yet
+ask_circles_after_edges = false
+
+[cheap.boundaries]
+harness = "opencode"
+model = "opencode/deepseek-v4.1-flash"
+
+[cheap.boundaries_judge]
+harness = "opencode"
+model = "opencode/deepseek-v4.1-flash"
+
+[cheap.roles]
+harness = "opencode"
+model = "opencode/deepseek-v4.1-flash"
+
+[cheap.groups]
+harness = "opencode"
+model = "opencode/deepseek-v4.1-flash"
+
+# The edges on DeepSeek: quality unmeasured.
+[cheap.edges]
+harness = "opencode"
+model = "opencode/deepseek-v4.1-flash"
+
+[cheap.decide]
+harness = "opencode"
+model = "opencode/deepseek-v4.1-flash"
+
+[cheap.vocabulary]
+harness = "opencode"
+model = "opencode/deepseek-v4.1-flash"
+
+[cheap.vocabulary_check]
+harness = "opencode"
+model = "opencode/deepseek-v4.1-flash"

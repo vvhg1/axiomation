@@ -1,0 +1,43 @@
+% A paper written for axiomation's tests: a modern rewrite of a
+% public-domain result (L. Euler, "Variae observationes circa series
+% infinitas", 1737), in our own words and notation; no source text is
+% copied. It carries the shapes the reader and the cutter are known to
+% meet in a LaTeX paper (tests/papers/test_whole_papers.py). The work
+% `primer2001` is invented, and so are the quotations and the page given
+% for it.
+\documentclass[11pt]{article}
+\input{preamble}
+\usepackage{eulernotes}
+
+\title{The Euler Product and the Divergence of the Prime
+  Reciprocals\thanks{Written for a test suite; the results are
+    Euler's, the exposition is ours.}}
+\author{A. Example \and B. Example}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We prove that the Riemann zeta function factors over the primes for every
+real $s > 1$, and we deduce from the factorisation that the sum of the
+reciprocals of the primes diverges. The argument needs only absolute
+convergence, unique factorisation and the elementary bound
+$-\log(1-x) \le x + x^2$ for $0 \le x \le 1/2$.
+\end{abstract}
+
+\input{sections/introduction}
+\input{sections/product}
+\include{sections/divergence}
+
+\appendix
+\input{appendix/proofs}
+
+\iffalse
+\section{An older argument}
+This section was cut from the draft and is never typeset.
+\fi
+
+\bibliographystyle{plain}
+\bibliography{refs}
+\end{document}

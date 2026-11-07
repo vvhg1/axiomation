@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>axiomation view</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<link rel="stylesheet" href="view.css">
+<script src="src/theme.js"></script>
+</head>
+<body>
+<header id="bar">
+  <img id="brand" src="wordmark.svg" alt="axiomation">
+  <div id="paper-name"><span id="paper"></span><span id="paper-file"></span></div>
+  <div id="state-control">
+    <button type="button" id="state" aria-haspopup="dialog" aria-expanded="false" aria-controls="state-panel" title="the kept state shown: click for its details, the other states and a comparison"></button>
+    <div id="state-panel" role="dialog" aria-label="kept states" hidden>
+      <div id="state-detail"></div>
+      <div id="state-list"></div>
+      <div id="state-compare">
+        <label>compare with <select id="compare" title="compare the state shown with an earlier one: what changed, badged in the text, and the update's tiers"></select></label>
+        <button type="button" id="what-changed" hidden title="compare this state with the one it was made from">what changed?</button>
+      </div>
+    </div>
+  </div>
+  <span id="comparing" hidden><span id="comparing-text"></span><button type="button" id="compare-off" aria-label="end the comparison" title="end the comparison">×</button></span>
+  <span id="drift" hidden></span>
+  <span id="uncovered"></span>
+  <input id="search" type="search" placeholder="Find: words, node, handle, finding" aria-label="find a block by its words, node, handle, block id or a finding's id" list="block-list" autocomplete="off">
+  <datalist id="block-list"></datalist>
+  <button type="button" id="verdict" title="whether the paper passes axiomation check at this state"></button>
+  <button id="help-toggle" type="button" title="what everything on this page means (?)">?</button>
+</header>
+<main>
+  <button type="button" id="side-toggle" aria-pressed="true" aria-label="inspector" title="hide the inspector: the paper takes its width"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><path class="side-pane" d="M10 3h2.5a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5H10z"/><line x1="10" y1="2.5" x2="10" y2="13.5" stroke="currentColor"/></svg></button>
+  <section id="left">
+    <div id="text-tools">
+      <span id="text-note"></span>
+      <button type="button" id="math" aria-pressed="true" aria-label="the paper rendered" title="the paper rendered: on, its formulas with the paper's macros and its markup as it prints; off, its source">¶</button>
+      <button type="button" id="lines" aria-pressed="true" aria-label="connection lines" title="the selected passage's connection lines along the paper's right edge">↳</button>
+      <button type="button" id="gutter" aria-pressed="true" aria-label="gutter" title="the gutter left of the text: line numbers, group brackets, block bars, open-item marks and edge counts">#</button>
+      <details id="more-tools">
+        <summary aria-label="more connection settings" title="more connection settings: the lens, every edge, roles, reach">⋯</summary>
+        <div class="tools-menu">
+          <label title="which edges the paper connections draw">lens <select id="lens"></select></label>
+          <label title="every edge in the lens as a faint arc"><input type="checkbox" id="faint"> every edge</label>
+          <label title="tint each block's words by its role segments"><input type="checkbox" id="roles"> roles</label>
+          <label title="tint what an edit to the selection reaches"><input type="checkbox" id="reach"> reach</label>
+        </div>
+      </details>
+    </div>
+    <section id="text" aria-label="the paper's source, in reading order"></section>
+  </section>
+  <div id="split-v" class="splitter v" title="drag to resize"></div>
+  <section id="side">
+    <nav id="tabs"><button type="button" id="tab-card" data-tab="card" class="on">block</button><button type="button" id="tab-open" data-tab="open">open</button><button type="button" id="tab-check" data-tab="check">check</button><button type="button" id="tab-inbox" data-tab="inbox" title="your decisions at this state: axiomation inbox">inbox</button><button type="button" id="tab-changes" data-tab="changes" hidden>changes</button><button type="button" id="tab-edit" data-tab="edit" hidden title="the paper's files against the latest state: an edit not yet updated">edit</button></nav>
+    <div id="panel">
+      <aside id="card"></aside>
+      <div id="open" hidden></div>
+      <div id="check" hidden></div>
+      <div id="inbox" hidden></div>
+      <div id="changes" hidden></div>
+      <div id="edit" hidden></div>
+    </div>
+  </section>
+</main>
+<script src="vendor/katex/katex.min.js"></script>
+<script src="src/palette.js"></script>
+<script src="src/text.js"></script>
+<script src="src/maths.js"></script>
+<script src="src/markup.js"></script>
+<script src="src/gutter.js"></script>
+<script src="src/arcs.js"></script>
+<script src="src/open.js"></script>
+<script src="src/check.js"></script>
+<script src="src/inbox.js"></script>
+<script src="src/card.js"></script>
+<script src="src/changes.js"></script>
+<script src="src/anchors.js"></script>
+<script src="src/help.js"></script>
+<script src="src/api.js"></script>
+<script src="src/current.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>

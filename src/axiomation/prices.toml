@@ -1,0 +1,48 @@
+# Model prices, in dollars per million tokens. Each model's table gives
+# input and output, and may give cache_read, cache_write_1h (a cache write
+# kept an hour) and cache_write_5m (kept five minutes). A write rate not
+# given is the other's, then input. Only the estimate made before each
+# session uses them, against --budget; the cost recorded is always the
+# host's own. A model's price holds at every effort. --rates overrides it
+# for one run.
+
+# Anthropic's list prices. Claude Code writes a session's text to the
+# cache for an hour, at twice the input; a subagent's fork writes for five
+# minutes, at 1.25 times. Opus 5.5's rates reproduce its recorded
+# sessions' costs, a forking one's too, from their tokens per lifetime.
+[claude-opus-5-5]
+input = 4
+output = 20
+cache_read = 0.20
+cache_write_1h = 8
+cache_write_5m = 5
+
+[claude-fable-5-1]
+input = 10
+output = 50
+cache_read = 0.25
+cache_write_1h = 20
+cache_write_5m = 12.5
+
+# Haiku 5.5's rates reproduce its recorded sessions' costs from their
+# tokens.
+[claude-haiku-5-5]
+input = 0.10
+output = 0.50
+cache_read = 0.01
+cache_write_1h = 0.20
+cache_write_5m = 0.125
+
+[claude-sonnet-5-5]
+input = 2
+output = 10
+cache_read = 0.20
+cache_write_1h = 4
+cache_write_5m = 2.5
+
+# Fitted to DeepSeek sessions' recorded costs, which it reproduces to
+# $0.0001.
+["opencode/deepseek-v4.1-flash"]
+input = 0.30
+output = 1.20
+cache_read = 0.006

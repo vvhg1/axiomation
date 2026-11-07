@@ -1,0 +1,5 @@
+[workspace]
+# This folder is a workspace: its papers share the settings below and one
+# corpus. Which folders are its papers, from here:
+# papers = "papers/*"
+

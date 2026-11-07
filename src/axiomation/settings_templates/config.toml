@@ -1,0 +1,53 @@
+# axiomation's user settings: your machine and your keys, for every paper.
+# Each setting is commented out. To set one, remove its "# ".
+# AXIOMATION_<NAME> in the shell (AXIOMATION_OCR_URL) overrides a line here.
+# This file holds keys: keep it readable by you alone (chmod 600).
+# `axiomation settings` shows each value in force and where it came from.
+
+# --- The cited works' PDFs -----------------------------------------------
+
+# A folder of <key>.pdf files, read for a .bib entry that names no file.
+# pdf_dir = "~/papers/pdfs"
+
+# --- Looking up cited works ----------------------------------------------
+
+# Your address, sent with each lookup: Unpaywall needs one, and Crossref
+# and OpenAlex answer more reliably with one.
+# contact_email = "name@example.org"
+
+# A CORE API key, for open copies from core.ac.uk. Optional.
+# core_api_key = "..."
+
+# Zotero with Better BibTeX, asked for a work whose .bib file path is
+# stale. Default: http://localhost:23119.
+# zotero_url = "http://localhost:23119"
+
+# --- The indexed corpus (the `library` extra) ----------------------------
+
+# A Qdrant server. Without it, no corpus is read.
+# qdrant_url = "http://localhost:6333"
+
+# A Voyage API key, for embedding and searching the corpus.
+# voyage_api_key = "..."
+
+# --- Reading scanned pages -----------------------------------------------
+
+# The OCR engine: tesseract (the default), http, paddle, mineru or chat.
+# The OCR contract: https://github.com/vvhg1/axiomation/blob/main/docs/ocr.md
+# ocr_backend = "tesseract"
+
+# The service's endpoint, for every engine but tesseract.
+# ocr_url = "http://localhost:8080/ocr"
+
+# The model's name at the service, for the chat engine.
+# ocr_model = "..."
+
+# The service's key, sent as a bearer token when it is set.
+# ocr_api_key = "..."
+
+# --- Spending ------------------------------------------------------------
+
+# What a run that asks a model may spend, in dollars, when you give no
+# --budget. Without it, such a run needs --budget. A paper's or a
+# workspace's [budget] overrides it.
+# run_dollars_max = 10

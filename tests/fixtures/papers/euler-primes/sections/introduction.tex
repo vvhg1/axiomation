@@ -1,0 +1,50 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Euclid's argument shows that there are infinitely many primes; it says
+nothing about how densely they lie. Euler's observation~\cite{euler1737}
+answers a sharper question: the primes are dense enough that the sum of
+their reciprocals diverges, although the sum of the reciprocals of the
+squares converges. In modern terms the result reads as follows; we state it
+in \cref{thm:divergence} and prove it in \cref{sec:divergence}.
+
+% The draft compared this with the twin primes; Brun's theorem belongs in
+% a later version.
+The main tool is the product formula of \cref{thm:euler-product}, which
+writes the zeta function as a product over the primes. Its proof is a
+careful version of the sieve, and it needs one fact about the integers,
+recorded as \cref{assum:ufd}.\footnote{Unique factorisation is proved in
+  every introductory text, e.g.\ \citet[Theorem~2]{hardywright}; see also
+  \citep[Chapter~1, {\S}1.2]{primer2001} for a version that keeps track of
+  the units.}
+
+\paragraph{What is new here.} Nothing in the mathematics. The exposition
+separates the two limits Euler took together, so that each step is an
+inequality between finite sums; about 5\% of the text is spent on that
+bookkeeping.
+
+\begin{quote}
+The sum of the reciprocals of the primes is infinite, and it grows like
+the logarithm of the logarithm of its bound.
+\end{quote}
+This paraphrase of the result is the one usually quoted~\cite[p.~351]{primer2001}.
+As the textbook puts it, ``the primes are not so sparse that their
+reciprocals can be summed, though they come close''~\cite{primer2001}.
+
+\vspace{1em}
+
+The paper is organised as follows.
+\begin{itemize}
+  \item \Cref{sec:product} proves the product formula.
+  \item \Cref{sec:divergence} deduces the divergence, in two steps:
+  \begin{itemize}
+    \item a lower bound for $\log \zeta(s)$ as $s \to 1^+$;
+    \item an upper bound for the same quantity by the prime sum.
+  \end{itemize}
+  \item \Cref{app:proofs} holds the proofs we postponed, and
+  \cref{sec:remarks,sec:introduction} frame them (page~\pageref{sec:remarks}).
+\end{itemize}
+A machine-readable copy of the argument is at
+\url{https://example.org/euler%20primes}.
+
+\newpage

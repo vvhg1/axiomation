@@ -1,0 +1,72 @@
+# axiomation's settings for a paper, or for every paper of a workspace.
+# Whoever has the paper reads them, so no path of your machine and no key
+# goes here: those go in your user file
+# (`axiomation init user`).
+# Each setting is commented out, with its default. To set one, remove its
+# "# ". A paper's setting overrides its workspace's.
+# `axiomation settings` shows each value in force and where it came from.
+
+[sources]
+# The bibliography, from this file's folder.
+# Default: the one .bib beside the paper.
+# bib = "references.bib"
+
+# The cited works' collection in Qdrant (the `library` extra).
+# Default: named after the bibliography.
+# collection = "my-library"
+
+# The embedding model, and the size of its vectors.
+# voyage_model = "voyage-context-4"
+# voyage_dims = 2048
+
+[gates]
+# What fails the paper in `axiomation check`. Each gate takes block (an
+# item fails the paper), warn (items are shown, the paper can pass) or off.
+
+# Claims that rest on nothing, and no ruling clears.
+# unsupported-claims = "block"
+
+# Negative readings, severe findings, and retracted works the paper cites.
+# defects = "block"
+
+# What a review has not yet verified.
+# unreviewed = "warn"
+
+# Cited works that are preprints, theses, reports or errata.
+# cited-publications = "warn"
+
+# References to a label no block holds.
+# dangling-references = "block"
+
+# Labels two blocks hold.
+# duplicate-labels = "block"
+
+# Assumptions nothing uses.
+# unused-premises = "warn"
+
+# Premises a proof rests on that its claim does not state.
+# undeclared-assumptions = "warn"
+
+[budget]
+# What a run that asks a model may spend, in dollars, when you give no
+# --budget. Without it (here, in the workspace or in your user file),
+# such a run needs --budget.
+# run_dollars_max = 10
+
+[computations]
+# The folders that hold the paper's scripts, from the paper's folder.
+# directories = ["."]
+
+# How long one script may run, in seconds.
+# run_timeout_seconds = 600
+
+[computations.runners]
+# The command that runs a script, by its extension (py, R, jl, m, sh).
+# Default for py: the environment found from the paper's folder up
+# (uv.lock, poetry.lock, pixi.toml, Pipfile, environment.yml, .venv),
+# else python3. The others have no default.
+# py = "uv run python"
+# R = "Rscript"
+# jl = "julia"
+# m = "octave"
+# sh = "bash"

@@ -1,0 +1,53 @@
+name: Bug report
+description: A command did something other than you expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Leave out any paper you may not share. A few synthetic lines that
+        show the same behavior are best.
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: The command you ran, with its flags.
+      placeholder: axiomation check ~/my-paper
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `axiomation --version`, and your OS.
+    validations:
+      required: true
+  - type: dropdown
+    id: format
+    attributes:
+      label: The paper's format
+      options:
+        - LaTeX
+        - Markdown
+        - Not about a paper
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: The output or the error, as text.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: An input that shows it
+      description: Optional. A few lines of a paper, written for this report.

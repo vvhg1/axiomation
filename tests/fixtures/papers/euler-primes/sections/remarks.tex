@@ -1,0 +1,30 @@
+\section{Remarks}\label{sec:remarks}
+
+\begin{rem}
+Euler's original argument multiplies divergent series as if they
+converged; the inequalities of \cref{lem:log} are what make it rigorous,
+and \thmref{divergence} is what it was after.
+\end{rem}
+
+\begin{proof}[Proof of the claims in \cref{sec:product}]
+Each claim there follows from absolute convergence.
+\end{proof}
+
+\begin{lem}\label{lem:tail}
+For $s \ge 2$, $\sum_{n > x} n^{-s} \le 1/x$.
+\end{lem}
+The bound is crude.
+\begin{proof}
+Compare with $\int_x^\infty t^{-2}\,dt$.
+
+The integral is $1/x$.
+\end{proof}
+
+\ifdefined\eulerconst We write $\eulerconst$ for Euler's constant.\fi
+
+\subsubsection*{Further reading}
+\Cref{sec:sharper} and the section \nameref{sec:remarks} point to
+\citet{primer2001}; \vref{lem:tail} is used nowhere else.
+
+\section*{Acknowledgements}
+We thank the reader for reading.

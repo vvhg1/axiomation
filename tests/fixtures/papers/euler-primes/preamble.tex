@@ -1,0 +1,32 @@
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[capitalise]{cleveref}
+\usepackage{hyperref}
+\usepackage{csquotes}
+\usepackage{placeins}
+\usepackage{thmtools}
+
+% Theorem names in babel's convention, as a LyX export writes them.
+\providecommand{\theoremname}{Theorem}
+\theoremstyle{plain}
+\newtheorem{thm}{\protect\theoremname}
+\newtheorem{lem}[thm]{Lemma}
+\newtheorem{prop}[thm]{Proposition}
+\newtheorem{cor}[thm]{Corollary}
+\newtheorem{claim}{Claim}
+\theoremstyle{definition}
+\newtheorem{defn}[thm]{Definition}
+\newtheorem{assum}{Assumption}
+\newtheorem{example}[thm]{Example}
+\theoremstyle{remark}
+\newtheorem*{rem}{Remark}
+
+% A reference command of the paper's own: it prints the word and adds the
+% label's prefix, so `\thmref{divergence}` points at `thm:divergence`.
+\newcommand{\thmref}[1]{Theorem~\ref{thm:#1}}
+
+% A proof under another name: it opens a proof and closes it.
+\newenvironment{proofsketch}{\begin{proof}[Sketch]}{\end{proof}}
+
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\primes}{\mathcal{P}}
+\DeclareMathOperator{\li}{li}

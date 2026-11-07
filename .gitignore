@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+.venv/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets
+.env
+
+# macOS
+.DS_Store
+
+# temporary files
+.tmp/
+
+# Agent-host settings stay on the machine
+.claude/
+.opencode/
+# A contributor's own agent instructions; AGENTS.md is the project's
+AGENTS.local.md
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.override.md
+.codex/

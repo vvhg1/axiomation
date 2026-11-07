@@ -1,0 +1,15 @@
+\section{Proof of \cref{thm:euler-product}}\label{app:proofs}
+
+\eulerproduct*
+
+Fix $s > 1$ and write $P_x(s)$ for the partial product as in the remark of
+\cref{sec:product}.
+
+By \cref{lem:geometric} each factor is an absolutely convergent series, so
+the finite product $P_x(s)$ may be multiplied out term by term. By
+\cref{assum:ufd} the result is $\sum n^{-s}$ over the $n$ whose prime
+factors are all at most $x$.
+
+Hence $0 \le \zeta(s) - P_x(s) \le \sum_{n > x} n^{-s}$, and the right
+side is the tail of a convergent series. Letting $x \to \infty$ gives
+\cref{eq:euler-product}.

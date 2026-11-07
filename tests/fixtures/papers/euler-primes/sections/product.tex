@@ -1,0 +1,75 @@
+\section{The product
+  formula}\label{sec:product}
+
+Throughout, $\primes$ denotes the set of primes and $s$ a real number.
+
+\begin{defn}[Zeta function]\label{def:zeta}
+For $s > 1$ let $\zeta(s) = \sum_{n \in \N} n^{-s}$.
+\end{defn}
+
+\begin{assum}[Unique factorisation]\label{assum:ufd}
+Every integer $n \ge 2$ is a product of primes, and the product is unique
+up to the order of its factors.
+\end{assum}
+
+\begin{lem}\label{lem:geometric}
+For every prime $p$ and every $s > 1$,
+\[
+  \frac{1}{1 - p^{-s}} = \sum_{k=0}^{\infty} p^{-ks},
+\]
+and the series converges absolutely.
+\end{lem}
+
+\begin{proof}
+Since $p \ge 2$ and $s > 1$, the ratio $p^{-s}$ lies in $(0, 1/2]$; the
+geometric series converges absolutely.
+
+Its sum is $1/(1 - p^{-s})$ by the usual formula.
+\end{proof}
+
+\begin{restatable}[Euler product]{thm}{eulerproduct}\label{thm:euler-product}
+For every $s > 1$ the product $\prod_{p \in \primes} (1 - p^{-s})^{-1}$
+converges and
+\begin{equation}\label{eq:euler-product}
+  \zeta(s) = \prod_{p \in \primes} \frac{1}{1 - p^{-s}}.
+\end{equation}
+\end{restatable}
+
+We postpone the proof to \cref{app:proofs}, after a remark on what the
+finite products count.
+
+\begin{proofsketch}
+Multiply out the geometric series of \cref{lem:geometric} and let the
+bound on the primes grow.
+\end{proofsketch}
+
+\begin{rem}
+Let $P_x(s) = \prod_{p \le x} (1 - p^{-s})^{-1}$. Multiplying out the
+finitely many series of \cref{lem:geometric}, each term $n^{-s}$ of
+$P_x(s)$ belongs to an $n$ all of whose prime factors are at most $x$, and
+by \cref{assum:ufd} it appears exactly once.\footnote{The order of the
+  factors does not matter: the series are absolutely convergent
+  (\cref{lem:geometric}).} The tail of $\zeta(s)$ missing from $P_x(s)$ is
+\label{eq:tail}
+\[
+  0 \le \zeta(s) - P_x(s) \le \sum_{n > x} n^{-s}.
+\]
+which tends to zero as $x \to \infty$.
+\end{rem}
+
+\begin{example}
+For $s = 2$ the product formula gives $\prod_p (1 - p^{-2})^{-1} = \pi^2/6$.
+\end{example}
+
+{\bf A consequence.} Since every factor of the product exceeds one, no
+factor vanishes, and $\zeta(s) > 0$ for every $s > 1$.
+
+\begin{figure}[t]
+  \centering
+  \fbox{The partial products $P_x(2)$ for $x \le 50$.}
+  \caption{The partial products approach $\pi^2/6$ from below.}
+  \label{fig:partial}
+\end{figure}
+\FloatBarrier
+
+\autoref{fig:partial} shows how slowly the partial products settle.

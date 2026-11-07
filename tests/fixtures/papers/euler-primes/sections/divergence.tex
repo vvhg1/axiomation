@@ -1,0 +1,92 @@
+\section{Divergence of the prime reciprocals}\label{sec:divergence}
+
+% @claim C001 from=thm:divergence
+\begin{thm}\label{thm:divergence}
+The series $\sum_{p \in \primes} 1/p$ diverges.
+\end{thm}
+
+The proof compares two estimates of $\log \zeta(s)$ as $s$ decreases to
+one. The first comes from the integers, the second from the primes.
+
+\begin{lem}\label{lem:log}
+Let $s > 1$. Then:
+\begin{enumerate}
+  \item\label{it:lower} $\log \zeta(s) \ge \log \frac{1}{s-1}$;
+  \item\label{it:upper} $\log \zeta(s) \le \sum_{p} p^{-s} + C$, where
+  $C = \sum_p p^{-2s} \le \zeta(2)$.
+\end{enumerate}
+\end{lem}
+
+\begin{proof}
+\textbf{Step 1.} For the lower bound compare the sum with an integral:
+\begin{align}
+  \zeta(s) &\ge \int_1^\infty t^{-s}\,dt \label{eq:integral}\\
+           &= \frac{1}{s-1}. \label{eq:integral-value}
+\end{align}
+
+\textbf{Step 2.} For the upper bound take logarithms in
+\cref{eq:euler-product} and use $-\log(1-x) \le x + x^2$ on
+$0 \le x \le 1/2$, which holds since
+
+\[
+  -\log(1-x) = \sum_{k \ge 1} \frac{x^k}{k}
+    \le x + \frac{x^2}{2} \sum_{k \ge 0} x^k.
+\]
+
+and the last sum is at most two.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:divergence}]
+Suppose the series converged, to $S$ say. By \cref{lem:log}~\ref{it:upper},
+$\log \zeta(s) \le S + \zeta(2)$ for every $s > 1$.
+
+By
+\cref{lem:log}~\ref{it:lower} the left side tends to infinity as
+$s \to 1^+$
+\[
+  \log \frac{1}{s-1} \to \infty,
+\]
+a contradiction.
+\end{proof}
+
+\begin{cor}\label{cor:infinite}
+There are infinitely many primes.
+\end{cor}
+
+\begin{proof}
+A finite set of primes has a finite sum of reciprocals; apply
+\cref{thm:divergence}.
+\end{proof}
+
+The two bounds \crefrange{eq:integral}{eq:integral-value} are the whole of
+the lower estimate, and \eqref{eq:integral-value} is sharp as $s \to 1^+$.
+
+\subsection{A sharper estimate}\label{sec:sharper}
+
+A sharper statement holds: the partial sums grow like $\log\log x$.
+
+\begin{claim}\label{claim:mertens}
+$\sum_{p \le x} 1/p = \log\log x + O(1)$.
+\end{claim}
+
+We do not prove \cref{claim:mertens}; Mertens' proof~\cite{mertens1874}
+uses the same comparison with more care, and \enquote{the constant that
+appears is not a simple one}~\cite{primer2001}. The steps are:
+\begin{enumerate}
+  \item \emph{(Chebyshev's bound.)} The primes up to $x$ number $O(x/\log x)$.
+  \item \emph{(Partial summation.)} The sum over primes becomes an integral
+  against the counting function.
+\end{enumerate}
+
+\begin{tcolorbox}
+A computation of the partial sums for $x \le 10^6$ agrees with
+$\log\log x + 0.2615$ to three decimals.
+\end{tcolorbox}
+
+The computation's record has the form
+\begin{verbatim}
+% @claim C999 from=claim:mertens
+x = 1000000, sum = 2.887328
+\end{verbatim}
+
+\input{sections/remarks}

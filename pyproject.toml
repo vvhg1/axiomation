@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "axiomation"
+dynamic = ["version"]
+description = "Build the argument graph of a paper and keep it current."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Victor Hobe-Gelting" }]
+dependencies = [
+    # A floor, and a cap only where a known release breaks the code:
+    # bibtexparser 2 is another API.
+    "bibtexparser>=1.4,<2",
+    "cryptography>=50.0.2",
+    "fonttools>=4.67",
+    "pillow>=12",
+    "pypdf>=6.21,<7",
+    "pypdfium2>=5",
+]
+
+[project.urls]
+Repository = "https://github.com/vvhg1/axiomation"
+
+[project.scripts]
+axiomation = "axiomation.cli:main"
+
+[project.optional-dependencies]
+# The cited works' corpus in Qdrant, its embeddings and semantic search;
+# Tesseract, the ingest's OCR and its witness.
+library = [
+    "fastembed>=0.8",
+    "pytesseract>=0.3",
+    "qdrant-client>=1.17",
+    "voyageai>=0.3",
+]
+
+[dependency-groups]
+dev = [
+    "axiomation[library]",
+    "pytest>=8",
+    "pytest-cov>=7",
+    "ruff>=0.9",
+]
+
+[tool.hatch.version]
+path = "src/axiomation/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/axiomation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The tests' shared helpers (`questions.review_paper`, `runner.fakes`).
+pythonpath = ["tests"]
+addopts = "-m 'not live'"
+markers = [
+    "live: needs a live service (an LLM, the network); skipped by default",
+    "signed: a person's filings take effect only under their signature",
+]
+
+[tool.coverage.run]
+source = ["axiomation"]
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]
+# The code blocks in Markdown illustrate; they are not linted as code.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP", "W"]
+
+[tool.uv.sources]
+axiomation = { workspace = true }
