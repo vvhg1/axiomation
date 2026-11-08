@@ -1,5 +1,6 @@
 <p align="center">
-  <img src="docs/assets/banner-dark.svg" alt="axiomation" width="880">
+  <img src="docs/assets/banner-light.svg#gh-light-mode-only" alt="axiomation" width="880">
+  <img src="docs/assets/banner-dark.svg#gh-dark-mode-only" alt="axiomation" width="880">
 </p>
 
 # axiomation

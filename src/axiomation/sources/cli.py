@@ -962,10 +962,7 @@ def _library_rows(status: Any) -> list[tuple[str, str]]:
             if settings.ocr_backend is OcrBackend.CHAT
             else []
         ),
-        (
-            "voyage key",
-            f"found  ({status.key_source})" if status.api_key else "MISSING",
-        ),
+        ("voyage key", _key_row(status)),
         (
             "tesseract",
             f"MISSING: {status.tesseract_missing}"
@@ -973,6 +970,16 @@ def _library_rows(status: Any) -> list[tuple[str, str]]:
             else "found",
         ),
     ]
+
+
+def _key_row(status: Any) -> str:
+    """The Voyage key: missing, or found and whether it embeds."""
+    if not status.api_key:
+        return "MISSING"
+    found = f"found  ({status.key_source})"
+    if status.key_error:
+        return f"{found}, FAILED: {status.key_error}"
+    return f"{found}, accepted" if status.key_tried else found
 
 
 def _library_lines(status: Any, *, verbose: bool) -> Iterator[str]:
@@ -1685,6 +1692,11 @@ def run(args: argparse.Namespace) -> int:
     try:
         config = load_settings(args.directory, args.store)
         off = library_off(resolve(config)) if args.action in LIBRARY_ACTIONS else ""
+        if off.startswith("library ="):
+            raise SourcesError(
+                f"`{args.action}` needs the library, and {off}: set library = "
+                '"on" there, or AXIOMATION_LIBRARY=on in the shell for one run'
+            )
         if off:
             raise SourcesError(
                 f"`{args.action}` needs the library, and {off}: install the "

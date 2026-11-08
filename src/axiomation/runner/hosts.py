@@ -86,6 +86,12 @@ class Host(Protocol):
         (`HostSetupError`)."""
         ...
 
+    def tool_server_error(self, server: ToolServer) -> str | None:
+        """Why a queue session's tool server would not start as this host
+        starts it, else None: asked of every step before a pair of
+        sessions runs, so none is paid for on a server that fails."""
+        ...
+
     def abort(self) -> None:
         """End every attempt in flight at once (a breach)."""
         ...

@@ -61,6 +61,8 @@ class Shelf:
     #: a key's file's content hash, where a test names one; else its
     #: file's: what it prints changes with its pages
     contents: dict[str, str] = field(default_factory=dict)
+    #: why its search is refused, where a test refuses it (a revoked key)
+    refused: str = ""
 
     def holds(self, key: str) -> bool:
         if self.down:
@@ -99,6 +101,8 @@ class Shelf:
         return [RawPage(key, i, held[i]) for i in sorted(held) if start <= i <= last]
 
     def search(self, query: str, key: str | None, top_k: int) -> list[RawPage]:
+        if self.refused:
+            raise RuntimeError(self.refused)
         return [
             RawPage(k, i, text, score=float(i))
             for k, held in self.texts.items()
@@ -327,3 +331,16 @@ def test_a_failing_provider_is_an_outage_to_a_named_search_a_fetch_and_held() ->
         None,
         ["the library failed: the shelf is down"],
     )
+
+
+def test_a_failing_search_is_told_before_a_session_reads_the_works() -> None:
+    """One search of one word through each provider that searches: a
+    refused one (a revoked key) says why; the plain tier, which searches
+    nothing, and a search that answers say nothing."""
+    refused = "search against c failed: Provided API key is invalid."
+    library = Shelf(Origin.LIBRARY, {"k": {1: PAGE}}, refused=refused)
+    assert evidence.search_failure(Sources([library])) == f"the library: {refused}"
+    assert evidence.search_failure(Sources([Shelf(Origin.LIBRARY, {})])) is None
+    plain = Shelf(Origin.FILE, {"k": {1: PAGE}}, refused=refused)
+    plain.searches = False
+    assert evidence.search_failure(Sources([plain])) is None

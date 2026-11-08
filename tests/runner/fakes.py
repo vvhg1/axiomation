@@ -700,7 +700,8 @@ class FakeQueueHost:
     `call(name, args)` gives the tool's text and whether it was refused;
     it returns the session's last message. Each session costs `cost`;
     with `ends`, it then raises that host exception (`HostOverBudget`,
-    …) with its answer."""
+    …) with its answer. Its tool server starts unless `server_error`
+    says why not."""
 
     name = "fake-queue"
     effort: str | None = None
@@ -711,8 +712,10 @@ class FakeQueueHost:
         cost: float = 0.01,
         model: str = "fake/queue",
         ends: type[Exception] | None = None,
+        server_error: str | None = None,
     ) -> None:
         self.script = script
+        self.server_error = server_error
         self.cost = cost
         self.model = model
         self.ends = ends
@@ -725,6 +728,11 @@ class FakeQueueHost:
 
     def ask(self, *_: Any, **__: Any) -> HostAnswer:
         raise AssertionError("a queue host asks no question")
+
+    def tool_server_error(self, server: Any) -> str | None:
+        """Its server is served in this process: it starts, unless the test
+        says why not."""
+        return self.server_error
 
     def ask_queue(
         self, session: QueueSession, timeout: float, spend_max: float | None = None

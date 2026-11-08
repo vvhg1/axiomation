@@ -229,7 +229,7 @@ _SECRET_ENDS = ("api_key", "token", "password", "secret")
 def _user_key_named(name: str) -> UserKey | None:
     """The user file's key a settings file's key names: by its own name,
     its shell name or a service's bare name (`OCR_URL`); None for none,
-    and for a key a paper may set too (the budget)."""
+    and for a key a paper may set too (the budget, the library switch)."""
     from axiomation.user_settings import UserKey  # it imports this module
 
     lowered = name.lower()

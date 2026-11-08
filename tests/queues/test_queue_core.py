@@ -107,9 +107,9 @@ def test_a_settled_line_is_in_the_working_state_its_tasks_and_reads_see(
 
 
 def test_the_answers_replay_in_their_order_and_only_in_it(paper, tmp_path) -> None:
-    """Each key binds the key settled before it: the spool's answers carry
-    a fresh working state to the same place, and an answer keyed after
-    another task than the one it follows is not taken."""
+    """The spool's answers carry a fresh working state to the same place;
+    the replay stops at the first task with no answer, though a later one
+    has its own."""
     store, state = paper
     spool = Spool(tmp_path / "spool.jsonl")
     s = served(store, state, spool)
@@ -120,7 +120,7 @@ def test_the_answers_replay_in_their_order_and_only_in_it(paper, tmp_path) -> No
     assert [u.task.id for u in used] == ["t1", "t2"]
     assert all(u.settled for u in used)
     assert (position.task.id, position.key) == ("t3", s.refresh().key)
-    # t2's answer alone, without t1's before it, is keyed elsewhere
+    # t2's answer alone: t1, unanswered, is served first
     t2 = {k: c for k, c in spool.calls().items() if c.args["task"] == "t2"}
     position, used = advance(workflow, Working(workflow), t2)
     assert used == [] and position.task.id == "t1"
@@ -540,3 +540,160 @@ def test_a_read_answered_as_a_picture_is_served_as_mcp_image_content() -> None:
     shown = content(queue.Image(b"\x89PNG", "work page index 2"))
     assert shown[0] == {"type": "text", "text": "work page index 2"}
     assert shown[1] == {"type": "image", "data": "iVBORw==", "mimeType": "image/png"}
+
+
+def _answered(store, state, spool, **options) -> dict[str, Call]:
+    """Each task served answered by its word, in the run's order."""
+    from queues.fake_workflow import saying
+
+    s = served(store, state, spool, **options)
+    while (text := s.next()) not in (EMPTY, ENDED):
+        reply, refused = s.call(*saying(text))
+        assert not refused, reply
+    return spool.calls()
+
+
+def test_a_task_s_answer_replays_though_a_task_before_it_left_the_draw(
+    paper, tmp_path
+) -> None:
+    """A key binds the task, not its place in the count nor the answers
+    before it that laid no line: a task leaving the draw moves no other
+    task's key."""
+    store, state = paper
+    calls = _answered(store, state, Spool(tmp_path / "spool.jsonl"))
+    run = Run(store, state, FACTORY, {"gone": ["t1"]})
+    with opened(run) as workflow:
+        position, used = advance(workflow, Working(workflow), calls)
+    assert position.task is None
+    assert sorted(u.task.id for u in used) == ["t2", "t3"]
+
+
+def test_a_key_binds_the_lines_settled_before_it(paper, tmp_path) -> None:
+    """An answer that laid lines changes what a later task is answered
+    on: the later task's key binds it, so its answer given before those
+    lines, or after others, is not taken."""
+    store, state = paper
+    options = {"paper_order": True}
+    plain = _answered(store, state, Spool(tmp_path / "a.jsonl"), **options)
+    argued = {**options, "argue": True, "argue_on": "t1"}
+    with opened(Run(store, state, FACTORY, argued)) as workflow:
+        working = Working(workflow)
+        position, used = advance(workflow, working, plain)
+    # t1 laid its line, so t2's answer given with no line before it is not t2's now
+    assert [u.task.id for u in used] == ["t1"]
+    assert position.task.id == "t2" and "→ justifies" in working.sheet
+
+
+def _keyed_as_0_1_0(
+    state_id: str,
+    served: str,
+    after: str,
+    kind: str = "fake-say",
+    steps: tuple[str, ...] = ("fake-say",),
+) -> str:
+    """A task's key as 0.1.0 made it: the task as served, its count with
+    it, after the key settled before it, whatever that answer laid."""
+    import hashlib
+
+    from queues.fake_workflow import Confirm, Say
+
+    template = {"fake-say": Say, "fake-confirm": Confirm}[kind].template
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "kind": kind,
+                "stage": "edges",
+                "template": template.name,
+                "version": template.version,
+                "steps": list(steps),
+                "state": state_id,
+                "task": served,
+                "after": after,
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def test_answers_keyed_as_0_1_0_still_replay(paper) -> None:
+    """A store's answers keyed by 0.1.0's keys resume as they are."""
+    store, state = paper
+    known, after = {}, ""
+    for n, (task, word) in enumerate((("t1", "one"), ("t2", "two"), ("t3", "three"))):
+        key = _keyed_as_0_1_0(
+            state.id, f"task {task} ({n + 1} of 3)\nsay {word}\n", after
+        )
+        known[key] = Call("say", {"task": task, "word": word})
+        after = key
+    run = Run(store, state, FACTORY, {"paper_order": True})
+    with opened(run) as workflow:
+        position, used = advance(workflow, Working(workflow), known)
+    assert position.task is None
+    assert [u.task.id for u in used] == ["t1", "t2", "t3"]
+    assert [u.key for u in used] == list(known)
+
+
+def test_a_task_after_one_found_by_its_0_1_0_key_follows_that_answer(
+    paper,
+) -> None:
+    """t1, keyed as 0.1.0 keyed it, laid lines, and t2 was answered after
+    it. Once t1's 0.1.0 key no longer matches (the count moved) and t1 is
+    answered anew, t2's answer, given on the old answer's lines, is not
+    taken."""
+    store, state = paper
+    options = {"paper_order": True, "argue": True, "argue_on": "t1"}
+    old_t1 = _keyed_as_0_1_0(state.id, "task t1 (1 of 3)\nsay one\n", "")
+    known = {old_t1: Call("say", {"task": "t1", "word": "one"})}
+    with opened(Run(store, state, FACTORY, options)) as workflow:
+        position, _ = advance(workflow, Working(workflow), known)
+    assert position.task.id == "t2"
+    known[position.key] = Call("say", {"task": "t2", "word": "two"})
+    moved = {**options, "gone": ["t3"]}
+    with opened(Run(store, state, FACTORY, moved)) as workflow:
+        position, used = advance(workflow, Working(workflow), known)
+        assert used == [] and position.task.id == "t1"
+        known[position.key] = Call("say", {"task": "t1", "word": "one"})
+        position, used = advance(workflow, Working(workflow), known)
+    assert [u.task.id for u in used] == ["t1"] and position.task.id == "t2"
+
+
+def test_a_two_step_task_keyed_as_0_1_0_still_replays(paper) -> None:
+    """Both steps' keys follow the task settled before; the next task
+    follows the second step's."""
+    store, state = paper
+    steps = ("fake-say", "fake-confirm")
+    known, after = {}, ""
+    for n, (task, word) in enumerate((("t1", "one"), ("t2", "two"), ("t3", "three"))):
+        head = f"task {task} ({n + 1} of 3)\n"
+        said = _keyed_as_0_1_0(
+            state.id, f"{head}say {word}\n", after, "fake-say", steps
+        )
+        confirmed = _keyed_as_0_1_0(
+            state.id, f"{head}confirm {word}\n", after, "fake-confirm", steps
+        )
+        known[said] = Call("say", {"task": task, "word": word})
+        known[confirmed] = Call("confirm", {"task": task, "word": word})
+        after = confirmed
+    run = Run(store, state, FACTORY, {"steps": 2, "paper_order": True})
+    with opened(run) as workflow:
+        position, used = advance(workflow, Working(workflow), known)
+    assert position.task is None
+    assert [u.key for u in used] == list(known)
+
+
+def test_a_run_begun_under_0_1_0_keys_resumes_under_both(paper) -> None:
+    """t1 keyed as 0.1.0 keyed it, t2 and t3 answered after under today's
+    keys: one more resume takes all three."""
+    store, state = paper
+    old_t1 = _keyed_as_0_1_0(state.id, "task t1 (1 of 3)\nsay one\n", "")
+    known = {old_t1: Call("say", {"task": "t1", "word": "one"})}
+    run = Run(store, state, FACTORY, {"paper_order": True})
+    with opened(run) as workflow:
+        for task, word in (("t2", "two"), ("t3", "three")):
+            position, _ = advance(workflow, Working(workflow), known)
+            assert position.task.id == task
+            known[position.key] = Call("say", {"task": task, "word": word})
+        position, used = advance(workflow, Working(workflow), known)
+    assert position.task is None
+    assert [u.task.id for u in used] == ["t1", "t2", "t3"]
+    assert used[0].key == old_t1

@@ -114,6 +114,9 @@ class Stop(StrEnum):
     BREACH = "breach"
     #: The host could not say what an attempt cost.
     UNCOUNTED = "uncounted"
+    #: A queue run's recorded answer its step no longer takes
+    #: (`queue.QueueError`): the run cannot go on past it.
+    QUEUE = "queue"
 
 
 @dataclass(frozen=True, slots=True)

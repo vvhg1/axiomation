@@ -26,6 +26,7 @@ from axiomation.questions.groups_file import (
     SESSION_TEMPLATE,
     session_questions,
 )
+from axiomation.runner import claude_code
 from axiomation.runner.claude_code import (
     CLAUDE_TMP_BYTES,
     GATE_SECONDS,
@@ -1131,6 +1132,20 @@ def test_a_queue_session_has_its_server_s_tools_alone(setup) -> None:
     assert call["brief_flag"] == "--system-prompt-file"
     assert call["stdin"] == QUEUE.prompt
     assert call["listing"] == []
+
+
+def test_a_queue_session_s_server_is_started_as_claude_code_starts_it(
+    setup, monkeypatch
+) -> None:
+    """Asked before a pair runs, the host starts the server once
+    (`queue.started`) and says why it does not start."""
+    host, _, _, _ = setup
+    tried = []
+    monkeypatch.setattr(
+        claude_code, "started", lambda server: tried.append(server) or "gone"
+    )
+    assert host.tool_server_error(QUEUE.server) == "gone"
+    assert tried == [QUEUE.server]
 
 
 def test_a_queue_session_s_server_tools_are_no_breach(setup, monkeypatch) -> None:

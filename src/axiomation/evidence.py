@@ -920,6 +920,26 @@ def parse_page(ref: str) -> tuple[str, int]:
     return key, int(index)
 
 
+#: The word a search of the cited works is tried with: one embedding.
+SEARCH_PROBE = "theorem"
+
+
+def search_failure(sources: Sources) -> str | None:
+    """Why the cited works cannot be searched by meaning, else None: one
+    search of one word through each provider that searches (the library:
+    one embedding, a fraction of a cent). None in the plain tier, where
+    none searches, and where each answers."""
+    failed = []
+    for provider in sources.providers:
+        if not provider.searches:
+            continue
+        try:
+            provider.search(SEARCH_PROBE, None, 1)
+        except Exception as error:  # noqa: BLE001 - a provider's failures are its own
+            failed.append(f"the {provider.origin.value}: {error}")
+    return "; ".join(failed) or None
+
+
 def sources_for(paper: Path, store: Path | None = None) -> Sources:
     """A paper's sources, as its settings name them, their caches under
     `store` (default: the paper's own store) (`axiomation.sources`): the

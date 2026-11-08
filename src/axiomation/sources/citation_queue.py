@@ -331,6 +331,7 @@ class Citing:
         self.kept = kept
         self.view = view
         self.found = found
+        self.round = found.round_id
         self.sources = sources
         self.author = author
         self.files = kept.directory

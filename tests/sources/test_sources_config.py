@@ -401,3 +401,69 @@ def test_the_core_resolves_the_bibliography_the_extra_reads(
     core = core_settings.bibliography(core_settings.load(paper))
 
     assert core == extra
+
+
+@pytest.mark.parametrize(
+    ("user", "paper", "shell", "off"),
+    [
+        ("off", None, None, 'library = "off" (user)'),
+        (None, "off", None, 'library = "off" (paper)'),
+        ("off", "on", None, ""),
+        ("on", "off", None, 'library = "off" (paper)'),
+        (None, "off", "on", ""),
+        (None, None, "off", 'library = "off" (shell)'),
+    ],
+)
+def test_the_library_switch_reads_each_work_s_pdf_where_it_says_off(
+    tmp_path: Path,
+    user_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    user: str | None,
+    paper: str | None,
+    shell: str | None,
+    off: str,
+) -> None:
+    """With `qdrant_url` set and the extra installed, `library = "off"`
+    reads each work's PDF (the plain tier): the shell's for one run over
+    the paper's `[sources]` over the user file's, and says where it was
+    set."""
+    from axiomation.sources.config import library_off
+
+    write_user_file(
+        user_file,
+        qdrant_url="http://localhost:6335",
+        **({"library": user} if user else {}),
+    )
+    if shell:
+        monkeypatch.setenv("AXIOMATION_LIBRARY", shell)
+    root = write_paper(tmp_path, sources=f'library = "{paper}"\n' if paper else "")
+
+    reason = library_off(resolve(load_settings(root)))
+    if off:
+        assert reason == off
+    else:
+        # on: the library reads, unless the extra is missing (the core's run)
+        assert not reason.startswith("library =")
+
+
+def test_a_library_switch_that_says_neither_on_nor_off_is_refused(
+    tmp_path: Path, user_file: Path
+) -> None:
+    root = write_paper(tmp_path, sources='library = "no"\n')
+
+    with pytest.raises(SourcesError, match=r'\[sources\]\.library is "on" or "off"'):
+        resolve(load_settings(root))
+
+
+def test_with_the_library_off_each_work_is_read_from_its_pdf(
+    tmp_path: Path, user_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sources a run reads are the plain tier's: no search to fail."""
+    from axiomation import evidence
+
+    write_user_file(user_file, qdrant_url="http://localhost:6335")
+    monkeypatch.setenv("AXIOMATION_LIBRARY", "off")
+    sources = evidence.sources_for(write_paper(tmp_path))
+
+    assert [type(p).__name__ for p in sources.providers] == ["Pdfs", "Transient"]
+    assert evidence.search_failure(sources) is None

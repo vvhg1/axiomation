@@ -229,7 +229,10 @@ def run(asked: Sync, say: Say) -> int:
     assert given.budget is not None
     say.line(f"sync: ${spent():.2f} spent of ${given.budget:g}")
     if code != 0:
-        say.note("sync: stopped in the review: the same command resumes")
+        say.note(
+            "sync: stopped in the review, for the reason above: once it is "
+            "dealt with, the same command resumes"
+        )
         return code
     say.write(reads.query(reads.Inbox(paper=paper)))
     return 0

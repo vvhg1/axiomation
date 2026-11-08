@@ -3,8 +3,9 @@ a block (`setting`, the proof, the sharpness claim's), answered by saying
 its word. With `steps` 2, the word is handed to a second step that
 confirms it, and the task settles there; a step passes the tasks its
 option names (`passes`, `confirm_passes`). With `argue`, the proof's task
-settles the line that stands the sharpness claim justified, and the
-claim's task then leaves the queue. No model is called."""
+(or the task `argue_on` names) settles the line that stands the
+sharpness claim justified, and the claim's task then leaves the queue.
+The tasks `gone` names are not drawn. No model is called."""
 
 from __future__ import annotations
 
@@ -43,7 +44,9 @@ class Say:
     kickoff = "Call `next`."
     tools = (Tool("say", "Say the task's word.", _word("task", "word")),)
 
-    def __init__(self, hand_on: bool, argue: bool, passes: frozenset[str]) -> None:
+    def __init__(
+        self, hand_on: bool, argue: str | None, passes: frozenset[str]
+    ) -> None:
         self.hand_on = hand_on
         self.argue = argue
         self.passes = passes
@@ -66,7 +69,7 @@ class Say:
             return Refused((f"say {task.subject['word']!r}",))
         if self.hand_on:
             return Accepted(hand_on={"said": args["word"]})
-        return Accepted(ARGUED if self.argue and task.id == "t2" else "")
+        return Accepted(ARGUED if task.id == self.argue else "")
 
 
 class Confirm:
@@ -76,7 +79,7 @@ class Confirm:
     kickoff = "Call `next`."
     tools = (Tool("confirm", "Confirm the word said.", _word("task", "word")),)
 
-    def __init__(self, argue: bool, passes: frozenset[str]) -> None:
+    def __init__(self, argue: str | None, passes: frozenset[str]) -> None:
         self.argue = argue
         self.passes = passes
 
@@ -98,7 +101,7 @@ class Confirm:
         said = task.subject.get("said", task.subject["word"])
         if args.get("word") != said:
             return Refused((f"confirm {said!r}",))
-        return Accepted(ARGUED if self.argue and task.id == "t2" else "")
+        return Accepted(ARGUED if task.id == self.argue else "")
 
 
 class Words:
@@ -108,8 +111,13 @@ class Words:
     serving = Serving()
 
     def __init__(
-        self, kept: edits.Kept, view: queries.View, steps: tuple[Any, ...]
+        self,
+        kept: edits.Kept,
+        view: queries.View,
+        steps: tuple[Any, ...],
+        gone: frozenset[str] = frozenset(),
     ) -> None:
+        self.gone = gone
         self.view = view
         self.files = kept.directory
         self.sheet = edits.shown(kept, Layer.EDGES)
@@ -123,7 +131,7 @@ class Words:
         return [
             Task(task, self.view.resolve(block), {"word": word})
             for task, block, word in BLOCKS
-            if not (argued and block == SHARP)
+            if not (argued and block == SHARP) and task not in self.gone
         ]
 
 
@@ -132,13 +140,13 @@ def words(
     store: RecordStore, state: State, options: Mapping[str, Any]
 ) -> Iterator[Words]:
     two = options.get("steps", 1) == 2
-    argue = bool(options.get("argue"))
+    argue = (options.get("argue_on") or "t2") if options.get("argue") else None
     steps: tuple[Any, ...] = (Say(two, argue, frozenset(options.get("passes", ()))),)
     if two:
         steps += (Confirm(argue, frozenset(options.get("confirm_passes", ()))),)
     view = queries.View(store, state)
     with edits.opened(store, state) as kept:
-        found = Words(kept, view, steps)
+        found = Words(kept, view, steps, frozenset(options.get("gone", ())))
         if options.get("counted"):
             found.reads = (COUNTED,)
         if options.get("own_block"):

@@ -3,6 +3,37 @@
 What each release changes, for the people who use axiomation. A release
 is a tag on `main`.
 
+## 0.1.1 (2026-11-08)
+
+Fixes to the review queues, the cited works' search and the README's
+banner, and a switch to read the cited works from their PDFs.
+
+- **A review queue resumes.** A `citationcheck`, `methods` or
+  `fieldresults` session that settled a finding could not be resumed:
+  every later run stopped at that answer. It resumes now, and asks
+  nothing it has answered.
+- **What you answer during a review round moves no other task.**
+  Answering a finding, or filing your own reading of a citation site,
+  while a round was open made the round ask every task after it again,
+  and pay for each. Now that task alone leaves the round.
+- **A queue that cannot go on stops cleanly**, with `stopped: queue:`
+  and the reason, not a traceback; what it filed stays filed.
+- **A paper named by a relative path.** With the paper named `.`, a
+  queue session's tools did not start, and the run said only that it
+  settled no task. They start now, and a tool server that does not
+  start stops the run with its error before any session is paid for.
+- **The cited works' search is tried before a review pays for it.**
+  `sources status` tries the Voyage key on one word and says
+  `accepted`, or `FAILED` with the reason. A `review` whose sessions
+  read the cited works stops before asking any when the search fails,
+  and its `--dry-run` says so.
+- **The library can be switched off.** `library = "off"`, in the user
+  file or a paper's `[sources]`, reads each cited work from its PDF
+  though a Qdrant server is set; `AXIOMATION_LIBRARY=off` does so for one
+  run.
+- **The README's banner** shows on PyPI, and on GitHub follows the theme
+  GitHub is set to. It says review, not verification.
+
 ## 0.1.0 (2026-11-07)
 
 The first public release.

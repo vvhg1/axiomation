@@ -47,6 +47,10 @@ class UserKey(StrEnum):
     CORE_API_KEY = "core_api_key"
     ZOTERO_URL = "zotero_url"
     PDF_DIR = "pdf_dir"
+    #: "off": each cited work is read from its PDF, not the library, where
+    #: the library would be read; a paper's or a workspace's `[sources]`
+    #: may say so too, the shell's over theirs (`sources.config.resolve`).
+    LIBRARY = "library"
     #: What a run may spend on any paper without `--budget`, in dollars:
     #: a number, the one key that is not a string.
     RUN_DOLLARS_MAX = "run_dollars_max"
@@ -64,8 +68,10 @@ class UserKey(StrEnum):
     @property
     def paper_may_set(self) -> bool:
         """Whether a paper's or a workspace's file may set it too, over the
-        person's: the budget, which is no fact of their machine."""
-        return self is UserKey.RUN_DOLLARS_MAX
+        user file's: the budget, which is no fact of their machine, and the
+        library switch, where a paper's works are not in the library (the
+        shell's switch over the paper's)."""
+        return self in (UserKey.RUN_DOLLARS_MAX, UserKey.LIBRARY)
 
 
 #: The value in force where the person sets none, for a key that has one.

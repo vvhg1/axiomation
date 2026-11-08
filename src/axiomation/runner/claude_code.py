@@ -78,6 +78,7 @@ from axiomation.questions import (
 )
 from axiomation.questions.gates import NotRegularFile, read_regular
 from axiomation.queue import SERVER_NAME as SERVED_NAME
+from axiomation.queue import SERVER_START_SECONDS, started
 from axiomation.runner.hosts import (
     HostAnswer,
     HostBreach,
@@ -216,10 +217,6 @@ QUEUE_READS = ("Read", "Grep")
 
 #: A queue session's tool server settings, beside the settings.
 MCP_CONFIG = "mcp.json"
-#: How long Claude Code waits for a queue session's tool server to start:
-#: it opens the kept state first.
-SERVER_START_SECONDS = 300.0
-
 #: How long a session on a tool server (a queue's, a review's by block)
 #: keeps its prompt cache (Claude Code's `CLAUDE_CODE_PROMPT_CACHE_TTL`).
 #: Its calls come seconds apart, a subagent's included, so a five-minute
@@ -650,6 +647,11 @@ class ClaudeCodeHost:
             "--system-prompt-file",
             str(root / BRIEF),
         ]
+
+    def tool_server_error(self, server: ToolServer) -> str | None:
+        """Why `server` would not start, else None: started once as Claude
+        Code starts it (`queue.started`)."""
+        return started(server)
 
     def ask_queue(
         self, session: QueueSession, timeout: float, spend_max: float | None = None

@@ -20,7 +20,7 @@ from axiomation.judgments import Author, answer_finding
 from axiomation.questions import load_template
 from axiomation.questions import review_file as rf
 from axiomation.queue import Accepted, Refused, Task, Working
-from axiomation.records import AGENT, FindingStatus, RecordStore
+from axiomation.records import AGENT, Aspect, FindingStatus, RecordStore
 from axiomation.resolver import Resolver
 from axiomation.runner import Runner
 from axiomation.runner.hosts import Rates
@@ -518,3 +518,381 @@ def test_review_asks_the_citation_session_as_a_queue(
     assert "3 tasks settled, 0 open" in out and "3 judgments, 1 findings" in out
     assert main([*args, "--budget", "5"]) == 0
     assert [len(h.sessions) for h in hosts] == [1, 1]
+
+
+#: The words of each site's block a finding on it quotes.
+QUOTED = {"s1": "A second sentence of the setting", "s2": "Small means below one"}
+
+
+def _judged_finding_both(served: str) -> tuple[str, dict]:
+    """A site judged verified; s1 and s2 each file a finding on their
+    block."""
+    task = served.split()[1]
+    args = judge(task, PAGES[_work(served)])
+    if task in QUOTED:
+        m = re.search(rf"⟦{task} cited⟧ (\S+) · ", served)
+        assert m is not None
+        args["finds"] = [
+            {
+                "aspect": "cited",
+                "anchors": [m.group(1), f"work:{_work(served)}"],
+                "severity": 1,
+                "quote": QUOTED[task],
+                "problem": "the work is cited whole for one claim",
+                "fix": "name its page",
+            }
+        ]
+    return "judge", args
+
+
+def _filed_finding(
+    paper, tmp_path, monkeypatch, judged=_judged, proposed=None
+) -> tuple[dict, list[str]]:
+    """Round r1 on fake hosts files a finding on s1 (with `judged`, on
+    each site it says), which an agent then proposes fixed: the next
+    round's tasks, f1 on. Returns the run's options and the findings' ids
+    in their order. `proposed`, where given, the indices of the findings
+    proposed fixed; else every one."""
+    store, state, _ = paper
+    monkeypatch.setattr(cq.evidence, "sources_for", lambda paper, store: shelves())
+    options = {
+        "profile": "standard",
+        "profiles": None,
+        "paper": str(tmp_path / "paper"),
+        "select": review.Selection.OPEN.value,
+        "round": "r1",
+        "find": True,
+        "model": "fake/queue",
+    }
+    hosts = [
+        FakeQueueHost(working_through(_found)),
+        FakeQueueHost(working_through(judged)),
+    ]
+    runner = Runner(
+        hosts[-1], Resolver(store), 10.0, Rates(0.0, 1.0), review_round="r1"
+    )
+    run_queue(runner, queue.Run(store, state, cq.FACTORY, options), hosts)
+    findings = store.judgment_records().findings
+    for n, finding in enumerate(findings):
+        if proposed is not None and n not in proposed:
+            continue
+        answer_finding(
+            store,
+            finding.id,
+            FindingStatus.FIXED,
+            note="the citation names its page now",
+            author=Author(AGENT, "model-b", "s9"),
+        )
+    return options, [f.id for f in findings]
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("fixed", {"task": "f1", "why": "the citation names its page now"}),
+        ("stands", {"task": "f1", "why": "the sentence still cites the work whole"}),
+    ],
+)
+def test_a_round_that_settles_a_finding_runs_through_and_resumes(
+    paper, tmp_path, monkeypatch, tool, args
+) -> None:
+    """The round's own answer settles the finding; replayed, between its
+    pairs and when the same round is asked again, it is the round's own
+    and is taken: the run reports the task settled, and asked again it
+    asks nothing and files nothing twice."""
+    store, state, _ = paper
+    options, (finding,) = _filed_finding(paper, tmp_path, monkeypatch)
+    settling = queue.Run(store, state, cq.FACTORY, {**options, "round": "r3"})
+    hosts = [
+        FakeQueueHost(working_through(_found)),
+        FakeQueueHost(working_through(lambda served: (tool, args))),
+    ]
+
+    def runner() -> Runner:
+        return Runner(
+            hosts[-1], Resolver(store), 10.0, Rates(0.0, 1.0), review_round="r3"
+        )
+
+    report = run_queue(runner(), settling, hosts, (1.0, 9.0), wait_seconds=5.0)
+    assert (report.settled, report.open, report.stopped) == (1, 0, None), report
+    again = run_queue(runner(), settling)
+    assert (again.settled, again.open, again.stopped) == (0, 0, None), again
+    assert [len(h.sessions) for h in hosts] == [1, 1]
+    held = store.judgment_records()
+    round_answers = {a.key for a in store.answers() if a.review_round == "r3"} & {
+        a.key for a in store.answers() if a.kind == cq.READER_KIND
+    }
+    assert len(round_answers) == 1
+    if tool == "fixed":
+        settled = [a for a in held.answers if a.answer in round_answers]
+        assert [(a.finding, a.status) for a in settled] == [
+            (finding, FindingStatus.FIXED)
+        ]
+    else:
+        assert [f.reaffirms for f in held.findings if f.reaffirms] == [finding]
+
+
+def test_a_review_whose_search_is_refused_stops_before_it_asks(
+    paper, tmp_path, monkeypatch, capsys
+) -> None:
+    """A revoked key: the search of the cited works is refused. Asked, the
+    review stops before any session, saying why; its dry run says so and
+    prices on."""
+    from axiomation import evidence
+    from axiomation.cli import main
+    from axiomation.commands import seating
+
+    store, _, _ = paper
+    refused = "search against c failed: Provided API key is invalid."
+    monkeypatch.setattr(
+        evidence, "sources_for", lambda paper, store: shelves(refused=refused)
+    )
+    args = ["review", str(tmp_path / "paper"), "--store", str(store.directory)]
+    args += ["--session", "citationcheck"]
+    capsys.readouterr()
+    assert main([*args, "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert f"the cited works cannot be searched: the library: {refused}" in out
+    assert ": 3 sites, 2 cited works" in out
+    hosts = [
+        FakeQueueHost(working_through(_found)),
+        FakeQueueHost(working_through(_judged)),
+    ]
+    monkeypatch.setattr(seating, "queue_hosts", lambda seated: hosts)
+    assert main([*args, "--budget", "5"]) != 0
+    err = capsys.readouterr().err
+    assert f"the cited works cannot be searched: the library: {refused}" in err
+    assert "`AXIOMATION_LIBRARY=off` for one run" in err
+    assert [len(h.sessions) for h in hosts] == [0, 0]
+    assert not [a for a in store.answers() if a.kind == cq.READER_KIND]
+
+
+def test_a_person_s_answer_meanwhile_is_not_the_round_s_own(
+    paper, tmp_path, monkeypatch
+) -> None:
+    """The round reads its own answers as its own, never a person's: a
+    finding a person answers while the round is open is refused to the
+    round's `fixed`, and the round asked again no longer serves it."""
+    store, state, _ = paper
+    options, (finding,) = _filed_finding(paper, tmp_path, monkeypatch)
+    settling = queue.Run(store, state, cq.FACTORY, {**options, "round": "r3"})
+    with queue.opened(settling) as workflow:
+        working = Working(workflow)
+        (task,) = workflow.draw(working)
+        answer_finding(store, finding, FindingStatus.POSTPONED)
+        _, reader = workflow.steps
+        why = {"task": "f1", "why": "the citation names its page now"}
+        found = reader.answer(task, "fixed", why, working, True)
+        assert isinstance(found, Refused)
+        assert "by a person meanwhile" in found.problems[0]
+    with pytest.raises(review.NoSubject), queue.opened(settling):
+        pass
+
+
+def test_a_finding_a_person_answers_meanwhile_moves_no_other_task(
+    paper, tmp_path, monkeypatch
+) -> None:
+    """The round settles both findings; a person then answers the first.
+    Asked again, the round asks nothing: the second keeps its number, and
+    its answer replays."""
+    store, state, _ = paper
+    options, findings = _filed_finding(
+        paper, tmp_path, monkeypatch, _judged_finding_both
+    )
+    assert len(findings) == 2
+    settling = queue.Run(store, state, cq.FACTORY, {**options, "round": "r3"})
+    fixed = {"why": "the citation names its page now"}
+    hosts = [
+        FakeQueueHost(working_through(_found)),
+        FakeQueueHost(
+            working_through(
+                lambda served: ("fixed", {"task": served.split()[1], **fixed})
+            )
+        ),
+    ]
+
+    def runner() -> Runner:
+        return Runner(
+            hosts[-1], Resolver(store), 10.0, Rates(0.0, 1.0), review_round="r3"
+        )
+
+    report = run_queue(runner(), settling, hosts, (1.0, 9.0), wait_seconds=5.0)
+    assert (report.settled, report.open) == (2, 0), report
+    answer_finding(store, findings[0], FindingStatus.POSTPONED)
+    again = run_queue(runner(), settling, hosts, (1.0, 9.0), wait_seconds=5.0)
+    assert (again.settled, again.open, again.stopped) == (0, 0, None), again
+    assert [len(h.sessions) for h in hosts] == [1, 1]
+
+
+def test_another_round_asks_a_site_again_though_its_text_is_the_same(
+    paper, tmp_path, monkeypatch
+) -> None:
+    """A person's proposed reading makes another round, which asks the
+    site again with the proposal in its hints: the first round's answer to
+    the same text is not this round's."""
+    from axiomation.judgments import judge as file_judgment
+    from axiomation.records import Depth, Verdict
+
+    store, state, _ = paper
+    options, _ = _filed_finding(paper, tmp_path, monkeypatch)
+    read = next(
+        j for j in store.judgment_records().judgments if j.aspect.value == "cited"
+    )
+    file_judgment(
+        store,
+        state,
+        read.aspect,
+        read.subject,
+        Verdict.NOT_SHOWN,
+        Depth.INFORMAL,
+        "the page states another ratio",
+        pages=[("able1998", 12)],
+        sources=shelves(),
+        propose=True,
+    )
+    asked = queue.Run(store, state, cq.FACTORY, {**options, "round": "r2"})
+    with queue.opened(asked) as workflow:
+        assert "s1" in [t.id for t in workflow.draw(Working(workflow))]
+
+    def answer(served: str) -> tuple[str, dict]:
+        task = served.split()[1]
+        if task.startswith("f"):
+            return "fixed", {"task": task, "why": "the citation names its page now"}
+        return "judge", judge(task, PAGES[_work(served)])
+
+    hosts = [
+        FakeQueueHost(working_through(_found)),
+        FakeQueueHost(working_through(answer)),
+    ]
+    runner = Runner(
+        hosts[-1], Resolver(store), 10.0, Rates(0.0, 1.0), review_round="r2"
+    )
+    run_queue(runner, asked, hosts, (1.0, 9.0), wait_seconds=5.0)
+    assert [len(h.sessions) for h in hosts] == [1, 1]
+    r2 = [
+        a.call["args"]["task"]
+        for a in store.answers()
+        if a.review_round == "r2" and a.kind == cq.READER_KIND
+    ]
+    assert "s1" in r2, r2
+
+
+def _propose_fixed(store, finding: str) -> None:
+    answer_finding(
+        store,
+        finding,
+        FindingStatus.FIXED,
+        note="the citation names its page now",
+        author=Author(AGENT, "model-b", "s9"),
+    )
+
+
+def test_a_finding_that_joins_a_round_is_numbered_after_its_own(
+    paper, tmp_path, monkeypatch
+) -> None:
+    """The round settles the one finding it holds; an agent's proposal then
+    brings an earlier finding in. That one is numbered after the round's
+    own, whose number and answer stay."""
+    store, state, _ = paper
+    options, findings = _filed_finding(
+        paper, tmp_path, monkeypatch, _judged_finding_both, proposed={1}
+    )
+    settling = queue.Run(store, state, cq.FACTORY, {**options, "round": "r3"})
+    fixed = {"why": "the citation names its page now"}
+    reader = FakeQueueHost(
+        working_through(lambda served: ("fixed", {"task": served.split()[1], **fixed}))
+    )
+    hosts = [FakeQueueHost(working_through(_found)), reader]
+    runner = Runner(reader, Resolver(store), 10.0, Rates(0.0, 1.0), review_round="r3")
+    assert run_queue(runner, settling, hosts, (1.0, 9.0), wait_seconds=5.0).settled == 1
+    _propose_fixed(store, findings[0])
+    with queue.opened(settling) as workflow:
+        numbered = {i: q.read.finding.id for i, q in workflow.found.questions.items()}
+    assert numbered == {"f1": findings[1], "f2": findings[0]}
+
+
+def test_a_site_a_person_reads_meanwhile_moves_no_other_site(
+    paper, tmp_path, monkeypatch
+) -> None:
+    """The round settles s1; a person then files their own reading of s2.
+    Opened again, the round no longer asks s2, and s3 keeps its number."""
+    from axiomation.judgments import judge as file_judgment
+    from axiomation.records import Depth, Verdict
+    from axiomation.runner.hosts import HostOverBudget
+
+    store, state, _ = paper
+    monkeypatch.setattr(cq.evidence, "sources_for", lambda paper, store: shelves())
+    options = {
+        "profile": "standard",
+        "profiles": None,
+        "paper": str(tmp_path / "paper"),
+        "select": review.Selection.OPEN.value,
+        "round": "r1",
+        "find": True,
+        "model": "fake/queue",
+    }
+    run = queue.Run(store, state, cq.FACTORY, options)
+    with queue.opened(run) as workflow:
+        s2 = workflow.found.subjects["s2"].subject
+        s3 = workflow.found.subjects["s3"].subject
+    reader = FakeQueueHost(working_through(_judged, stop_after=1), ends=HostOverBudget)
+    hosts = [FakeQueueHost(working_through(_found)), reader]
+    runner = Runner(reader, Resolver(store), 10.0, Rates(0.0, 1.0), review_round="r1")
+    assert run_queue(runner, run, hosts, (1.0, 9.0), wait_seconds=5.0).settled == 1
+    file_judgment(
+        store,
+        state,
+        Aspect.CITED,
+        s2,
+        Verdict.VERIFIED,
+        Depth.INFORMAL,
+        f"able1998:12 {HELD}",
+        pages=[("able1998", 12)],
+        sources=shelves(),
+    )
+    with queue.opened(run) as workflow:
+        drawn = [t.id for t in workflow.draw(Working(workflow))]
+        assert workflow.found.subjects["s3"].subject == s3
+    assert drawn == ["s1", "s3"]
+
+
+def test_a_person_s_answer_between_pairs_loses_no_later_answer(
+    paper, tmp_path, monkeypatch
+) -> None:
+    """One run, a task a pair: after the first pair a person answers the
+    other finding. Each later pair's answer is filed, none asked twice:
+    the run reads the store as it stands when it files each pair."""
+    store, state, _ = paper
+    options, findings = _filed_finding(
+        paper, tmp_path, monkeypatch, _judged_finding_both
+    )
+    settling = queue.Run(
+        store, state, cq.FACTORY, {**options, "round": "r3", "select": "all"}
+    )
+    asked: list[str] = []
+
+    def answer(served: str) -> tuple[str, dict]:
+        task = served.split()[1]
+        asked.append(task)
+        if task.startswith("f"):
+            return "fixed", {"task": task, "why": "the citation names its page now"}
+        return "judge", judge(task, PAGES[_work(served)])
+
+    one = working_through(answer, stop_after=1)
+    sessions = []
+
+    def reader(call):
+        said = one(call)
+        sessions.append(said)
+        if len(sessions) == 1:
+            # the person answers the round's other finding meanwhile
+            answer_finding(store, findings[1], FindingStatus.POSTPONED)
+        return said
+
+    hosts = [FakeQueueHost(working_through(_found)), FakeQueueHost(reader)]
+    runner = Runner(
+        hosts[-1], Resolver(store), 10.0, Rates(0.0, 1.0), review_round="r3"
+    )
+    report = run_queue(runner, settling, hosts, (1.0, 9.0), wait_seconds=5.0)
+    assert (report.open, report.stopped) == (0, None), report
+    assert sorted(asked) == ["f1", "s1", "s2", "s3"], asked

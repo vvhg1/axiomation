@@ -120,7 +120,9 @@ def test_a_review_not_whole_ends_the_round_without_the_inbox(
     Steps(monkeypatch, review=Exit.STOPPED)
     assert cli.main(["sync", *where, "--budget", "4"]) == Exit.STOPPED
     captured = capsys.readouterr()
-    assert "stopped in the review: the same command resumes" in captured.err
+    assert "stopped in the review, for the reason above: once it is dealt" in (
+        captured.err
+    )
     assert "inbox at state" not in captured.out
 
 

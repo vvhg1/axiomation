@@ -19,6 +19,10 @@
 # voyage_model = "voyage-context-4"
 # voyage_dims = 2048
 
+# "off" reads each cited work from its PDF, not the corpus: for a paper
+# whose works are not in it. Default: the user file's, else "on".
+# library = "off"
+
 [gates]
 # What fails the paper in `axiomation check`. Each gate takes block (an
 # item fails the paper), warn (items are shown, the paper can pass) or off.

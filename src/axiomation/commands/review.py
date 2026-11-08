@@ -100,6 +100,29 @@ class Review:
     asking: Asking = field(default_factory=Asking)
 
 
+def _search_failed(
+    sources: evidence.Sources | None, sessions: Collection[Session]
+) -> str | None:
+    """Why a review cannot be asked as it stands, where a session it asks
+    reads the cited works (citationcheck, `review.READS_BIBLIOGRAPHY`) and
+    their search fails (a revoked key, the library out of reach): the
+    session would be paid for in full on what it could not find. None
+    where it answers."""
+    reads = any(
+        s is Session.CITATIONCHECK or s in review.READS_BIBLIOGRAPHY for s in sessions
+    )
+    why = None if sources is None or not reads else evidence.search_failure(sources)
+    if why is None:
+        return None
+    return (
+        f"the cited works cannot be searched: {why}. Check the Voyage key "
+        "and the library's Qdrant (`axiomation sources status PAPER` tries "
+        "both), or read each work's PDF instead: `AXIOMATION_LIBRARY=off` "
+        'for one run, `library = "off"` in the user file or the paper\'s '
+        "`[sources]` to keep it"
+    )
+
+
 def request(arguments: argparse.Namespace) -> Review:
     """`review`'s request from its parsed arguments."""
     return requested(
@@ -215,6 +238,11 @@ def run(reviewed: Review, say: Say) -> Ran:
                 corpus.file(RecordStore(paper.store), observed, corpus.OBSERVER)
                 return run(replace(reviewed, paper=paper, observed=True), say)
         corpus.file(store, observed, corpus.OBSERVER)
+    failed = _search_failed(sources, sessions) if asking or reviewed.dry_run else None
+    if failed is not None and asking:
+        raise UsageError(failed)
+    if failed is not None:
+        say.line(f"{failed}; asked, the review stops here")
     spent = 0.0
     code = 0
     like = like_runs(store.answers())

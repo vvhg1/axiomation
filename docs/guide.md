@@ -217,7 +217,7 @@ occasion. A page with no usable text, a scan's, is read as an image.
 The cited works' corpus is the `library` extra (`uv tool install
 'axiomation[library]'`), read where a Qdrant server is named (`qdrant_url`): OCR at
 ingest, a corpus kept, and search by meaning. Unless both are there,
-the PDFs are read as above. It does not install on Python 3.15: onnxruntime, which its local
+or the setting `library` says `"off"`, the PDFs are read as above. It does not install on Python 3.15: onnxruntime, which its local
 embeddings need, has no wheel for 3.15; use 3.12 to 3.14 (`uv tool
 install --python 3.14 'axiomation[library]'`). With the extra and
 `qdrant_url`, the corpus is
@@ -231,6 +231,7 @@ command that uses it runs:
 | the cited works' PDFs, where an entry names no file | a directory of `<key>.pdf` files | `pdf_dir` |
 | the indexed corpus (the `library` extra) | a [Qdrant](https://qdrant.tech/documentation/quickstart/) server, its storage folder kept outside any project folder: it holds every page read and its embeddings, which take hours to make again | `qdrant_url`; unset, no corpus is read |
 | embedding and searching it | a [Voyage](https://voyageai.com) API key | `voyage_api_key` |
+| reading each work's PDF though the corpus is set up | nothing | `library = "off"` |
 | ingesting the corpus | the `tesseract` binary (`brew install tesseract`, `apt install tesseract-ocr`); for a model to read scans, PaddleOCR-VL's or MinerU's own server, a vision model behind an OpenAI-compatible endpoint, or any service answering [the OCR contract](ocr.md) | `ocr_backend`, `ocr_url`, `ocr_model`, `ocr_api_key` |
 | looking up a cited work (`sources publications`, `fetch`, `resolve`) | a contact address, which Unpaywall needs and Crossref and OpenAlex serve more reliably | `contact_email` |
 | open copies from CORE | a [CORE](https://core.ac.uk) API key (optional) | `core_api_key` |
@@ -255,11 +256,19 @@ and explained, readable by you alone. Nothing sets a budget until you do:
 without one, a run that asks a model needs `--budget`.
 `AXIOMATION_` and the setting's name in capitals
 (`AXIOMATION_VOYAGE_API_KEY`) sets one in the shell, over the file; no
-`.env` is read. The budget alone may also be set by a paper or a
+`.env` is read. The budget may also be set by a paper or a
 workspace (`[budget] run_dollars_max`), which takes precedence over the
-user file's. `axiomation sources status DIR` says whether the library
+user file's; so may `library`, in `[sources]`, for a paper whose works
+are not in the corpus (the shell's value still over it). `axiomation sources status DIR` says whether the library
 or each work's PDF reads the cited works, and why, and lists each `.bib` entry by where its PDF is
-read from (or asks the library's services whether they answer).
+read from (or asks the library's services whether they answer, and tries
+the Voyage key on one word: `found, accepted`, or `found, FAILED` with
+Voyage's reason). A `review` that asks a session reading the cited works
+tries their search the same way first: where it fails (a revoked key,
+the library's Qdrant out of reach), it stops before any session is paid
+for, and its `--dry-run` says so. Fix the key or the service, or read
+each work's PDF instead: `AXIOMATION_LIBRARY=off` for one run, `library
+= "off"` to keep it.
 
 **Under the library, a scanned page**, or one whose text layer spells no
 words, is read at ingest by the OCR backend you set, Tesseract where

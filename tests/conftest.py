@@ -145,3 +145,22 @@ def no_real_host(request, tmp_path_factory, monkeypatch):
         stub.write_text(STUB, encoding="utf-8")
         stub.chmod(0o755)
     monkeypatch.setenv("PATH", f"{directory}{os.pathsep}{os.environ['PATH']}")
+
+
+@pytest.fixture(autouse=True)
+def no_real_voyage(request, monkeypatch):
+    """Voyage's client refuses to embed: an offline test that forgets its
+    fake (`sources status` tries the key) never reaches the service. A test
+    fakes the client or the reader's `embed_query`; a `live` test keeps it."""
+    if request.node.get_closest_marker("live"):
+        return
+    try:
+        import voyageai
+    except ImportError:
+        return
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("an offline test reached Voyage: fake its client")
+
+    for name in ("embed", "contextualized_embed"):
+        monkeypatch.setattr(voyageai.Client, name, refuse)

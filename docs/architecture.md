@@ -101,10 +101,12 @@ fastembed, and Tesseract for the ingest's OCR; `sources/library/`) holds
 the corpus in Qdrant: the rest of `sources/` reaches it only at named
 sites, and imports none of its libraries but Tesseract, at the OCR
 client's two. Installed, with the person's `qdrant_url` set (no Qdrant
-is assumed), it is the full tier: a work's pages are read
+is assumed), it is the full tier unless the setting `library` says
+`"off"` (the user file's, a paper's or a workspace's `[sources]`, or the
+shell's, each over the one before): a work's pages are read
 from the corpus, a search is by meaning, a fetched copy is read by OCR
 as an ingest reads it (`sources.config.library_on`; `sources status`
-says which tier reads, and why). Unless both are there, the plain tier: a work's pages are
+says which tier reads, and why). Else the plain tier: a work's pages are
 its PDF's text layer on this machine, read when asked and kept nothing
 of (its entry's `file`, else `<pdf_dir>/<key>.pdf`, the person's
 `pdf_dir`), a page with no usable text read as an image, a fetched copy
@@ -223,7 +225,11 @@ whose run writes the graph it would be near on is served in the paper's
 order alone. The server runs outside the session's sandbox, as the
 host's own isolated Python on the package, bound to one store, one kept
 state or one question, one step and one spool; it reads the store and writes the spool
-alone.
+alone. It runs in a directory of the host's, so every path it is handed
+is absolute, however the paper was named. Before a pair of sessions
+runs, each step's host starts its server once from an empty directory,
+as it will for the session: one that lists no tools stops the run
+(`host`) with its error, and neither session runs.
 
 A queue session's brief is its whole system prompt, in place of the
 host's own, which speaks of a coding agent's work and not of the task; so
@@ -240,9 +246,13 @@ Every task served, every read and every check sees the **working
 state**: the kept state with the lines the run settled so far laid over
 its sheet. A task another answer settled leaves the queue, and the graph
 reads show the lines settled. A task's key is its step's kind, stage,
-template and version, its workflow's steps, the kept state, the task as
-served and the key settled before it, so the run's answers replay in their order and only
-in it.
+template and version, its workflow's steps, the kept state, the task
+(its id and its text as its step renders it, not its place in the
+count), the key of the last answer that laid lines on the working state,
+and a review session's round. So an answer replays only on the working
+state and in the round it was given in, and a task that leaves the draw
+moves no other's key. Answers keyed as 0.1.0 keyed them (by the task as
+served, after the key settled before it) still replay.
 
 A workflow may hand an answer to a **second step**, another model's
 session, before it settles: both steps' sessions run at once on one
@@ -254,7 +264,8 @@ step may pass a task of a kind it does not answer, which the next step is
 served as drawn; the last step takes every task.
 
 The **spool**, in the store's `sessions/`, holds each answer accepted,
-in order. Once the sessions end the runner files what settled through
+in order. Once the sessions end the runner reads the store again, as
+the next pair's servers will, and files what settled through
 the resolver: one answer record per task and step, its `call` the typed
 call (the tool and its arguments, which a resumed queue replays), with
 its session and its order in the run, costing nothing; and
@@ -486,9 +497,10 @@ cleanly and resumably, leaving every finished answer recorded:
 |---|---|
 | `budget` | the next attempt could pass the budget, an attempt reached what was left of it, or, under a budget the settings gave, a step is expected to cost more than is left |
 | `credit` | the host refused for billing |
-| `host` | the host failed several attempts in a row |
+| `host` | the host failed several attempts in a row, a queue's sessions settled no task, or a tool server did not start (its error named; neither session of the pair runs) |
 | `breach` | the model touched a path outside its directory: the run ends at once |
 | `uncounted` | the host could not say what an attempt cost |
+| `queue` | a queue run's recorded answer its step no longer takes: what was filed stays filed, and an answer not yet filed is kept |
 
 Before each attempt the runner reserves its estimated cost against the
 budget and stops if it could pass it. The estimate is one attempt: the
@@ -1383,9 +1395,13 @@ words, which its sheet shows; none of them makes a state, and a round's
 own answers never move its id), is kept on
 each of its answers. The same command at the same state is the same round:
 asked again, it holds on its sheets the subjects its answers read and the
-findings they settled as they stood before, so it is the same question, its
-answered sessions replay, and its edge lines are given once every session
-has answered; any other round holds back what holds. A session may be
+findings they settled as they stood before, and its check reads those
+findings so too (the round's own answers are its own, a person's are
+not), so it is the same question, its answered sessions replay, and its edge lines are given once every session
+has answered; any other round holds back what holds. Within a round a
+finding or a subject keeps its number: one that another answer settled
+or read since the round began is numbered still and not asked, and a
+finding that joins the round is numbered after those it began with. A session may be
 scoped (`--scope`, `--by-section`): its sheet holds the subjects whose
 claim's block lies in its sections, lines or handles (a proof's `valid`
 with its theorem, and named by the proof's handle too), the paper whole

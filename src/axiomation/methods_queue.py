@@ -287,6 +287,7 @@ class Methods:
         self.kept = kept
         self.view = view
         self.found = found
+        self.round = found.round_id
         self.author = author
         self.files = kept.directory
         self.sheet = edits.shown(kept, Layer.EDGES)

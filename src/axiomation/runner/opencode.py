@@ -65,6 +65,7 @@ from typing import Any
 
 from axiomation.questions import (
     QueueSession,
+    ToolServer,
     Workspace,
 )
 from axiomation.questions.gates import NotRegularFile, read_regular
@@ -326,6 +327,11 @@ class OpenCodeHost:
             "OpenCode serves no queue session: ask this step under Claude Code "
             "(a profile's harness `claude-code`)"
         )
+
+    def tool_server_error(self, server: ToolServer) -> str | None:
+        """None: OpenCode serves no queue session, and says so when asked
+        one (`ask_queue`)."""
+        return None
 
     def abort(self) -> None:
         """End every attempt in flight, and its process group."""

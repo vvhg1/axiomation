@@ -112,7 +112,11 @@ def test_the_budget_is_the_one_key_that_is_a_number(user_file: Path) -> None:
 
 
 def test_a_paper_may_set_the_budget_but_no_fact_of_a_machine() -> None:
-    assert {k for k in UserKey if k.paper_may_set} == {UserKey.RUN_DOLLARS_MAX}
+    """And the library switch: whether a paper's works are in the corpus."""
+    assert {k for k in UserKey if k.paper_may_set} == {
+        UserKey.RUN_DOLLARS_MAX,
+        UserKey.LIBRARY,
+    }
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
