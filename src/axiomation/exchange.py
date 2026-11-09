@@ -602,29 +602,35 @@ def flag_payload(
 #: what the edge relies on, a hypothesis, so a reading made without it
 #: rests on another edge.
 ASSUMED = "⊨ assumed"
+#: A source part's words in an edge's name: after `⊣ ` as a source claim's,
+#: so a reading that leaves the claims an edge names aside leaves them too.
+SOURCE_PART = "⊣ ⟦part⟧"
 #: An edge named as it is named across states, within one cut: its
 #: source, kind, target's kind and name, and its parts' and claims' words,
-#: normalised (`named_claims_key`).
+#: normalised (`named_ends_key`).
 EdgeKey = tuple[str, str, str, str, tuple[str, ...]]
 #: A line of the edges sheet named within one cut: its
 #: kind (`edge`, `self`, `standing`), then what names it.
 LineKey = tuple[Any, ...]
 
 
-def named_claims_key(
+def named_ends_key(
     claims: Sequence[str],
     source_claims: Sequence[str] = (),
     restates_none: bool = False,
     assumed: bool = False,
+    source_parts: Sequence[str] = (),
 ) -> tuple[str, ...]:
-    """The claims an edge names, as its name across states holds them:
-    each target claim's words after `⊢ `, each source
-    claim's (an about edge's, or an assumed edge's) after `⊣ `, normalised
+    """What an edge names beside its target's parts, as its name across
+    states holds it: each target claim's words after `⊢ `, each source
+    claim's (an about edge's, or an assumed edge's) after `⊣ `, each
+    source part's words (a uses edge's) after `SOURCE_PART`, normalised
     and sorted, after its parts' words; `⊣ -` where its source end
     restates none; `ASSUMED` where it takes its target as a hypothesis."""
     return (
         tuple(sorted(f"⊢ {' '.join(c.split())}" for c in claims))
         + tuple(sorted(f"⊣ {' '.join(c.split())}" for c in source_claims))
+        + tuple(sorted(f"{SOURCE_PART} {' '.join(w.split())}" for w in source_parts))
         + ((f"⊣ {RESTATES_NONE}",) if restates_none else ())
         + ((ASSUMED,) if assumed else ())
     )
@@ -644,8 +650,12 @@ def edge_key(edge: Edge, words: Mapping[tuple[str, str], str]) -> EdgeKey:
                 for p in edge.parts
             )
         )
-        + named_claims_key(
-            edge.claims, edge.source_claims, edge.restates_none, edge.assumed
+        + named_ends_key(
+            edge.claims,
+            edge.source_claims,
+            edge.restates_none,
+            edge.assumed,
+            [words.get((edge.source, p), p) for p in edge.source_parts],
         ),
     )
 
@@ -820,6 +830,11 @@ def edges_payload(
                 **({"source_claims": list(e.source_claims)} if e.source_claims else {}),
                 **({"restates_none": True} if e.restates_none else {}),
                 **({"assumed": True} if e.assumed else {}),
+                **(
+                    {"source_entries": [entry_id(e.source, p) for p in e.source_parts]}
+                    if e.source_parts
+                    else {}
+                ),
                 **({} if e.note is None else {"note": e.note}),
             }
             for n, e in enumerate(edges.edges)

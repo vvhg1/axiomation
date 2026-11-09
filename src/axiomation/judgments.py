@@ -491,6 +491,11 @@ def _relied(at: Seen, sources: Iterable[str], kind: str) -> list[BasisElement]:
     )
     found: list[BasisElement] = []
     for _, e in held:
+        # a line inside its block, from a part onto another, says which part
+        # writes which: no reliance outside the block, whose text a reading
+        # of it reads whole already
+        if e["target"].get("block") == e["source"] and e.get("source_entries"):
+            continue
         found += [_edge(at, e), _target(at, e)]
     return found
 
@@ -933,7 +938,7 @@ def _continued_edge(e: BasisElement, step: Step) -> BasisElement | None:
 
 def _legend_parts(parts: Sequence[str]) -> tuple[str, ...]:
     """An edge's parts' words without the claims it names
-    (`exchange.named_claims_key`): naming, narrowing or re-pointing a line's
+    (`exchange.named_ends_key`): naming, narrowing or re-pointing a line's
     claim continues the edge, since the cover, not the edge, decides which
     claim's judgments are read."""
     return tuple(w for w in parts if not w.startswith(("⊢ ", "⊣ ")))

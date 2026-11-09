@@ -26,6 +26,7 @@ from axiomation.sources.config import (
     contact,
     library_off,
     no_contact,
+    optional_api_key,
     resolve,
 )
 from axiomation.sources.contract import TextSource
@@ -152,6 +153,12 @@ class SourcesStatus:
     #: where the Voyage key was read (the shell, the user file), or empty
     #: when there is none
     key_source: str = ""
+    #: whether the key was tried, one word embedded: in the library tier,
+    #: with a key
+    key_tried: bool = False
+    #: why embedding with the key failed, where it did (a key Voyage
+    #: refuses, or Voyage out of reach): a search would fail
+    key_error: str = ""
     #: the person's user file, and whether it is there
     user_file: str = ""
     user_file_found: bool = False
@@ -182,7 +189,10 @@ class SourcesStatus:
     def ok(self) -> bool:
         """The library's contract holds, or its collection is not built
         yet (a new paper's); in the plain tier, no work's place is out of
-        reach (an outage)."""
+        reach (an outage). A key that cannot embed fails it: the library
+        cannot be searched."""
+        if self.key_error:
+            return False
         if self.contract is not None:
             return self.contract.ok or not self.contract.built
         return not self.outage and not any(
@@ -214,6 +224,8 @@ class SourcesStatus:
             "zotero": self.zotero,
             "api_key": self.api_key,
             "key_source": self.key_source,
+            "key_tried": self.key_tried,
+            "key_error": self.key_error,
             "user_file": self.user_file,
             "user_file_found": self.user_file_found,
             "ignored": list(self.ignored),
@@ -281,8 +293,11 @@ def collect(
     from axiomation.sources.library.client import SourceReader
 
     borrowed = reader is not None
-    view = reader or SourceReader(settings)
+    view = reader or SourceReader(settings, api_key=optional_api_key(config))
+    tried, failed = bool(key_source), ""
     try:
+        if tried:
+            failed = _key_error(view)
         contract = view.check_contract()
         papers: tuple[Paper, ...] = ()
         mismatched: list[tuple[str, Check]] = []
@@ -305,6 +320,8 @@ def collect(
             view.close()
     return replace(
         told,
+        key_tried=tried,
+        key_error=failed,
         contract=contract,
         papers=papers,
         chunks=sum(paper.chunks for paper in papers),
@@ -318,6 +335,18 @@ def collect(
         tesseract_missing=tesseract.missing(),
         several=tuple(several),
     )
+
+
+def _key_error(view: SourceReader) -> str:
+    """Why the reader's key cannot embed, else empty: one word embedded as
+    a search embeds its query (a fraction of a cent)."""
+    from axiomation.evidence import SEARCH_PROBE
+
+    try:
+        view.embed_query(SEARCH_PROBE)
+    except Exception as error:  # noqa: BLE001 - the client's failures are its own
+        return str(error)
+    return ""
 
 
 def _plain_works(

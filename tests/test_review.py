@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import types
 from dataclasses import replace
 from pathlib import Path
 
@@ -2478,6 +2479,36 @@ def test_review_s_dry_run_counts_what_it_holds_back(state, capsys) -> None:
         assert f"unrecognized arguments: {gone}" in capsys.readouterr().err
 
 
+def test_a_dry_run_prices_an_answer_the_store_holds_at_nothing(state) -> None:
+    """A run stopped after the session answered, before the command filed
+    it: the dry run names the answer the store holds under the brief's key
+    and prices it at $0, as the command files it asking nothing."""
+    from axiomation.commands import review as reviewing
+    from axiomation.profiles import Agent, Harness
+    from axiomation.runner import LikeRuns
+
+    store, opened, found = state
+    agent = Agent(Harness.CLAUDE_CODE, "claude-opus-5-5", rates=FLAT)
+    said: list[str] = []
+    say = types.SimpleNamespace(line=said.append)
+    view = queries.View(store, opened.state)
+
+    assert reviewing._say_briefs(ARGUMENT, view, [found], agent, LikeRuns(), say) != (
+        0.0,
+        0.0,
+    )
+    run(store, opened, found, full(found))
+    said.clear()
+
+    assert reviewing._say_briefs(ARGUMENT, view, [found], agent, LikeRuns(), say) == (
+        0.0,
+        0.0,
+    )
+    assert said == [
+        f"argument: held, answer {found.question.key[:12]}: filed at $0, nothing asked"
+    ]
+
+
 def test_review_asks_the_seats_asked_by_default_and_names_the_rest(
     state, capsys
 ) -> None:
@@ -4117,6 +4148,55 @@ def test_a_uses_line_replaces_its_owner_s_line_onto_the_target_and_widens_it() -
     )
     # a uses line onto a target the block does not use replaces nothing
     assert rf.corrected(written, line('→ uses v · "by v"')) == []
+
+
+def test_a_uses_line_keeps_the_parts_its_block_s_lines_leave_from() -> None:
+    """Uses lines onto one target from disjoint parts stand apart: a
+    review's line leaving from a part replaces the line leaving from it,
+    never its sibling's; one leaving from the block whole replaces each,
+    and is given leaving from all their parts. It leaves from each part the
+    line it replaces left from, and a line from the block whole is never
+    narrowed to a part."""
+    written = {
+        "j": [
+            '→ uses [pi] t · "pi is W/Z"',
+            '→ uses [phi] t · "phi is -log W"',
+            '→ uses u · "by u"',
+            '→ uses [a] v assumed · "if v"',
+        ]
+    }
+
+    def line(text: str) -> rf.EdgeLine:
+        return rf.EdgeLine(1, "j", text)
+
+    one = line('→ uses [pi] t · "pi is W/Z" — W and Z')
+    assert rf.corrected(written, one) == ['→ uses [pi] t · "pi is W/Z"']
+    assert rf.narrowed(one, rf.corrected(written, one)) is None
+    whole = line('→ uses t · "pi is W/Z"')
+    assert rf.corrected(written, whole) == [
+        '→ uses [pi] t · "pi is W/Z"',
+        '→ uses [phi] t · "phi is -log W"',
+    ]
+    assert rf.narrowed(whole, rf.corrected(written, whole)) is None
+    # given, it leaves from both parts the lines it replaces left from
+    assert rf.kept_leaving(whole, rf.corrected(written, whole)).line == (
+        '→ uses [pi, phi] t · "pi is W/Z"'
+    )
+    lone = line('→ uses u [x] · "by u"')
+    assert rf.kept_leaving(lone, rf.corrected(written, lone)) == lone
+    fewer = line('→ uses [pi] t · "pi or phi"')
+    both = rf.EdgeLine(1, "j", '→ uses [pi, phi] t · "pi or phi"')
+    assert rf.narrowed(fewer, rf.corrected(written, both)) == (
+        "j → uses t: leaves from each part j's line onto t left from: [phi]"
+    )
+    placed = line('→ uses [x] u · "by u"')
+    assert "leaves from j whole: a line leaving from parts would narrow it" in (
+        rf.narrowed(placed, rf.corrected(written, placed)) or ""
+    )
+    # an assumed line's source bracket names claims: it leaves from the
+    # block whole, and meets every line onto its target
+    assumed = line('→ uses [b] v assumed · "if v"')
+    assert rf.corrected(written, assumed) == ['→ uses [a] v assumed · "if v"']
 
 
 #: The proof's uses line onto the definition, widened from its part to the

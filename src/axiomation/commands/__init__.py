@@ -49,6 +49,9 @@ class Exit(IntEnum):
     BREACH = 4
     #: a question is unanswered: nothing kept; the same command resumes
     UNANSWERED = 5
+    #: a Ctrl-C outside a run's stop (a second one, or one between runs):
+    #: the shell's code for SIGINT
+    INTERRUPTED = 130
 
 
 class Say:
@@ -232,7 +235,7 @@ def dollars(amount: float) -> str:
 
 
 #: The steps a build or an update may end with, in the order they run.
-FOLLOW_UPS = ("reread", "support", "circles")
+FOLLOW_UPS = ("reread", "support", "place", "circles")
 
 
 def summary_lines(summary: Mapping[str, Any]) -> str:

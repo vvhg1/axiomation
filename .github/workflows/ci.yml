@@ -1,7 +1,10 @@
 name: CI
 
 on:
+  # pushes to main and pull requests; a pushed branch with a pull request
+  # would otherwise run it twice
   push:
+    branches: [main]
   pull_request:
 
 permissions:

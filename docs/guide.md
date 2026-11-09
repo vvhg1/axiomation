@@ -217,7 +217,7 @@ occasion. A page with no usable text, a scan's, is read as an image.
 The cited works' corpus is the `library` extra (`uv tool install
 'axiomation[library]'`), read where a Qdrant server is named (`qdrant_url`): OCR at
 ingest, a corpus kept, and search by meaning. Unless both are there,
-the PDFs are read as above. It does not install on Python 3.15: onnxruntime, which its local
+or the setting `library` says `"off"`, the PDFs are read as above. It does not install on Python 3.15: onnxruntime, which its local
 embeddings need, has no wheel for 3.15; use 3.12 to 3.14 (`uv tool
 install --python 3.14 'axiomation[library]'`). With the extra and
 `qdrant_url`, the corpus is
@@ -231,6 +231,7 @@ command that uses it runs:
 | the cited works' PDFs, where an entry names no file | a directory of `<key>.pdf` files | `pdf_dir` |
 | the indexed corpus (the `library` extra) | a [Qdrant](https://qdrant.tech/documentation/quickstart/) server, its storage folder kept outside any project folder: it holds every page read and its embeddings, which take hours to make again | `qdrant_url`; unset, no corpus is read |
 | embedding and searching it | a [Voyage](https://voyageai.com) API key | `voyage_api_key` |
+| reading each work's PDF though the corpus is set up | nothing | `library = "off"` |
 | ingesting the corpus | the `tesseract` binary (`brew install tesseract`, `apt install tesseract-ocr`); for a model to read scans, PaddleOCR-VL's or MinerU's own server, a vision model behind an OpenAI-compatible endpoint, or any service answering [the OCR contract](ocr.md) | `ocr_backend`, `ocr_url`, `ocr_model`, `ocr_api_key` |
 | looking up a cited work (`sources publications`, `fetch`, `resolve`) | a contact address, which Unpaywall needs and Crossref and OpenAlex serve more reliably | `contact_email` |
 | open copies from CORE | a [CORE](https://core.ac.uk) API key (optional) | `core_api_key` |
@@ -255,11 +256,19 @@ and explained, readable by you alone. Nothing sets a budget until you do:
 without one, a run that asks a model needs `--budget`.
 `AXIOMATION_` and the setting's name in capitals
 (`AXIOMATION_VOYAGE_API_KEY`) sets one in the shell, over the file; no
-`.env` is read. The budget alone may also be set by a paper or a
+`.env` is read. The budget may also be set by a paper or a
 workspace (`[budget] run_dollars_max`), which takes precedence over the
-user file's. `axiomation sources status DIR` says whether the library
+user file's; so may `library`, in `[sources]`, for a paper whose works
+are not in the corpus (the shell's value still over it). `axiomation sources status DIR` says whether the library
 or each work's PDF reads the cited works, and why, and lists each `.bib` entry by where its PDF is
-read from (or asks the library's services whether they answer).
+read from (or asks the library's services whether they answer, and tries
+the Voyage key on one word: `found, accepted`, or `found, FAILED` with
+Voyage's reason). A `review` that asks a session reading the cited works
+tries their search the same way first: where it fails (a revoked key,
+the library's Qdrant out of reach), it stops before any session is paid
+for, and its `--dry-run` says so. Fix the key or the service, or read
+each work's PDF instead: `AXIOMATION_LIBRARY=off` for one run, `library
+= "off"` to keep it.
 
 **Under the library, a scanned page**, or one whose text layer spells no
 words, is read at ingest by the OCR backend you set, Tesseract where
@@ -311,6 +320,20 @@ every command that asks: `build`, `update`, `sync`, `review`, and the
 `--ask` of `reread`, `support` and `circles`; each but `sync` also takes
 `--host none`, which asks nothing and goes on from what the store
 holds.
+
+**Ctrl-C** while a run asks ends the sessions in flight and prints
+`stopped: interrupted` with what was spent. A session cut off that
+answers in one file records nothing and is asked again from its start.
+A session that settles task by task (the citation, methods and
+fieldresults reviews, `support`, `reread`, `place`, `circles`) files the
+tasks it settled, and the one it was on is asked again. What a cut
+session spent is counted against the budget; under Claude Code, which
+says a session's cost only at its end, it is the least it spent, from
+the turns it took. The command's `--dry-run` then prices only what is
+left: an answer the store holds is filed at $0, and a queue's settled
+tasks are not priced again. A second Ctrl-C, or one between a command's steps,
+ends the command in one line. Either way the command ends as an
+interrupted process (status 130), so a script that runs it stops too.
 
 `standard` is the profile when neither `--profile` nor `--host` is
 given. A build of a version already built asks nothing: it names the
@@ -475,6 +498,26 @@ because the paper argues in a circle: the end names a whole block
 holding a definition, or no claim of several. An edit naming the part
 or claim the line relies on breaks it, and an about line of a block of
 several claims that restates none of them says so, `→ about [-] T`.
+Naming a content part walks its block in place of asking its claims;
+the walk takes in that part's lines alone only where the block's own
+lines name the parts they leave from (`→ uses [<part>] T`, [the
+model](model.md) §§ 3, 9): until one does, the whole block is walked,
+each of its sentences' lines with it. Name the part each line leaves
+from, cutting a part for a sentence where needed, and a part written in
+terms of another uses it, `→ uses [<part>] <block> [<other part>]`.
+
+`place` lists the blocks a line enters at a part whose own lines name no
+part they leave from, where the walk takes in more than that part names.
+`place --ask` has the profile's edges agent take each one no word reads
+whole (or those named) as a task, one at a time, and answer it:
+`placed`, naming the parts each line leaves from (or the block whole),
+adding a part for a sentence a line leaves from, and the parts each part
+writes, given at the end as one edges edit; or
+`whole`, filed with why, not asked again until the block's words, parts
+or lines change. It only places: no line's target, quote or target end
+changes, and a line you wrote stays as written. A build and an update
+end with it, after the search and before the circles, unless the profile
+turns it off; `--no-place` skips it once.
 
 `circles --ask` has the profile's edges agent take every circle no word
 holds real (or those named by their key's prefix) as a task, one at a
@@ -483,7 +526,8 @@ at the end as one edges edit), or `real`, filed with why and what you
 should change. The answer may only narrow: it never takes a line off,
 widens an end or adds support. `check` counts the circles agents alone
 read real, for you to audit. A build ends with this queue, and an
-update after its reread and its search, from what is left of
+update after its reread, its search and its placing, from what is left
+of
 `--budget`, unless the profile turns it off; `--no-circles` skips it
 once.
 
@@ -491,9 +535,14 @@ once.
 axiomation open PAPER --kind circle                  # each circle once, the heaviest first
 axiomation circles PAPER --ask --dry-run              # the question on every circle not read real, priced
 axiomation circles PAPER --ask --budget 4            # its narrowed ends an edges edit; a real circle filed
+axiomation place PAPER                                # the blocks to place, each read whole or not
+axiomation place PAPER --ask --dry-run --prompts p/   # priced, with the brief and the tasks under p/
 axiomation change PAPER --part 'gain [g]: "g = the output over the input" (definition)' \
   --retract bound '→ uses gain · "the gain"' --add bound '→ uses gain [g] · "the gain"' \
   --reason "the bound relies on the gain's definition, not on its claim"
+axiomation change PAPER --part 'gain [h]: "h = the loss over the input" (definition)' \
+  --retract gain '→ uses noise · "the loss"' --add gain '→ uses [h] noise · "the loss"' \
+  --reason "only h's sentence relies on the noise"
 ```
 
 A section is named by its number, an unnumbered one by the number its
@@ -718,8 +767,9 @@ the claim itself. Each answer is checked as it is given. Once every
 claim is settled, the lines are given as the search's edges edit, which
 stands the claims argued, and each claim read unargued is filed with
 why. A search lapses when its claim's words change. A build and an
-update end with it, after the reread and before the circles, unless the
-profile turns it off; `--no-search` skips it once. Where the profile
+update end with it, after the reread and before the placing and the
+circles, unless the profile turns it off; `--no-search` skips it once.
+Where the profile
 names the steps' models, `support --ask` refuses `--model`, `--effort`
 and `--rates`.
 
@@ -993,7 +1043,8 @@ axiomation sync PAPER --session argument --session citationcheck   # those revie
 `sync` runs `update` where the paper's text is ahead of the latest
 state; then, as the profile ends an update with them, `reread --ask` on
 the marks still open, `support --ask` on the claims standing unsupported
-no search read and `circles --ask` on the circles no word holds real
+no search read, `place --ask` on the blocks to place no word reads whole
+and `circles --ask` on the circles no word holds real
 (each asks nothing where there are none, and asks again what an
 update left unanswered); then `review` over the sessions the profile
 asks by default, or those `--session` names (a group too, `field` or
@@ -1239,7 +1290,9 @@ name a second claim of its block on it, the line names both (`→ about
 [a, b] T`); a change that adds a second is refused with the line it
 holds and, where one line can say what both say, the one to file in its
 place. Two justifies lines may stand apart, each naming claims of the
-target the other does not ([the model](model.md) § 3).
+target the other does not, and two uses lines, each leaving from parts
+of its block the other does not leave from (`→ uses [g] T`, `→ uses [h]
+T`; [the model](model.md) § 3).
 
 An edges `change` asks nothing, but each reading that rests on a line it
 adds or retracts lapses: the reader was not shown the graph as it now

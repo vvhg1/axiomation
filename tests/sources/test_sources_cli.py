@@ -14,8 +14,9 @@ from axiomation.cli import main  # noqa: E402
 from axiomation.sources.config import ResolvedSources  # noqa: E402
 from axiomation.sources.library import client as client_module  # noqa: E402
 from axiomation.sources.library import qdrant as qdrant_module  # noqa: E402
+from axiomation.sources.library import vectors  # noqa: E402
 from axiomation.sources.library.upsert import ensure_collection  # noqa: E402
-from sources.fakes import FakeQdrant  # noqa: E402
+from sources.fakes import FakeQdrant, FakeVoyage  # noqa: E402
 from user_files import write_user_file  # noqa: E402
 
 
@@ -30,10 +31,9 @@ def wired(
     monkeypatch.setenv("AXIOMATION_VOYAGE_API_KEY", "fixture-key")
     monkeypatch.setattr(qdrant_module, "connect", lambda _: fake_qdrant)
     monkeypatch.setattr(client_module, "connect", lambda _: fake_qdrant)
+    monkeypatch.setattr(vectors, "voyage", lambda key: FakeVoyage())
     monkeypatch.setattr(
-        client_module.SourceReader,
-        "embed_query",
-        lambda self, text: ([0.0] * 8, {"indices": [1], "values": [1.0]}),
+        vectors, "sparse_vectors", lambda texts: [{"indices": [1], "values": [1.0]}]
     )
     for page in (1, 2):
         fake_qdrant.add_chunk(
@@ -113,6 +113,10 @@ def test_status_says_where_each_value_came_from(
     monkeypatch.delenv("AXIOMATION_QDRANT_URL", raising=False)
     monkeypatch.setattr(qdrant_module, "connect", lambda _: fake)
     monkeypatch.setattr(client_module, "connect", lambda _: fake)
+    monkeypatch.setattr(vectors, "voyage", lambda key: FakeVoyage())
+    monkeypatch.setattr(
+        vectors, "sparse_vectors", lambda texts: [{"indices": [1], "values": [1.0]}]
+    )
 
     assert run(paper, "sources", "status") == EXIT_OK
 
@@ -127,6 +131,42 @@ def test_status_says_where_each_value_came_from(
     assert "papers_v2" not in output
 
 
+def test_status_says_whether_the_key_is_accepted(
+    sources_paper: Path,
+    wired: FakeQdrant,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """The person's key is tried, one word embedded with it: accepted, or
+    failed with Voyage's reason, the status then failing, its JSON saying
+    why."""
+    keys: list[str] = []
+
+    def client(key: str) -> FakeVoyage:
+        keys.append(key)
+        return FakeVoyage()
+
+    monkeypatch.setattr(vectors, "voyage", client)
+    assert run(sources_paper, "sources", "status") == EXIT_OK
+    assert re.search(r"voyage key +found .*, accepted\n", capsys.readouterr().out)
+    assert keys == ["fixture-key"]
+
+    class Refusing(FakeVoyage):
+        def embed(self, *args, **kwargs):
+            raise RuntimeError("Provided API key is invalid.")
+
+    monkeypatch.setattr(vectors, "voyage", lambda key: Refusing())
+    assert run(sources_paper, "sources", "status") == EXIT_ERROR
+    out = capsys.readouterr().out
+    assert re.search(
+        r"voyage key +found .*, FAILED: Provided API key is invalid\.\n", out
+    )
+    assert run(sources_paper, "sources", "status", "-j") == EXIT_ERROR
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["key_error"] == "Provided API key is invalid."
+    assert payload["ok"] is False
+
+
 def test_status_names_the_shell_when_the_url_comes_from_it(
     sources_paper: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
@@ -137,6 +177,10 @@ def test_status_names_the_shell_when_the_url_comes_from_it(
     monkeypatch.setenv("AXIOMATION_VOYAGE_API_KEY", "fixture-key")
     monkeypatch.setattr(qdrant_module, "connect", lambda _: fake)
     monkeypatch.setattr(client_module, "connect", lambda _: fake)
+    monkeypatch.setattr(vectors, "voyage", lambda key: FakeVoyage())
+    monkeypatch.setattr(
+        vectors, "sparse_vectors", lambda texts: [{"indices": [1], "values": [1.0]}]
+    )
 
     assert run(sources_paper, "sources", "status") == EXIT_OK
 

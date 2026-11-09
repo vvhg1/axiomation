@@ -5,7 +5,9 @@ One adapter per host behind it: Claude Code's
 and the tests' fakes. A question with a workspace is an agent session on
 its files, which both adapters run. The rates
 here, the models' prices in `prices.toml`, serve the runner's
-estimate only; the cost recorded is always the host's own.
+estimate, and the least a session an interrupt cut off spent where its
+host said no cost (`HostInterrupted`); else the cost recorded is always
+the host's own.
 """
 
 from __future__ import annotations
@@ -74,7 +76,8 @@ class Host(Protocol):
         """The answer to `prompt`; with a workspace, the edited file's text
         when the session ends. `spend_max`, in dollars, ends the attempt
         once it has spent that much (`HostOverBudget`), where the host can;
-        None: no limit but the timeout."""
+        None: no limit but the timeout. A person's interrupt ends it
+        (`HostInterrupted`; `interruption.waited`)."""
         ...
 
     def ask_queue(
@@ -84,6 +87,12 @@ class Host(Protocol):
         which spools them; the answer is its last message, cost and tokens.
         `spend_max` as `ask` takes it. A host that serves none refuses
         (`HostSetupError`)."""
+        ...
+
+    def tool_server_error(self, server: ToolServer) -> str | None:
+        """Why a queue session's tool server would not start as this host
+        starts it, else None: asked of every step before a pair of
+        sessions runs, so none is paid for on a server that fails."""
         ...
 
     def abort(self) -> None:
@@ -121,6 +130,18 @@ class HostOverBudget(Exception):
     def __init__(self, message: str, answer: HostAnswer) -> None:
         super().__init__(message)
         self.answer = answer
+
+
+class HostInterrupted(Exception):
+    """A session a person's interrupt cut off (`runner.interruption`):
+    its process ended before it answered. Nothing it wrote is an answer.
+    `whole`: whether its answer's cost is what the host said it spent;
+    else it is the least it spent, its turns priced at these rates."""
+
+    def __init__(self, message: str, answer: HostAnswer, whole: bool) -> None:
+        super().__init__(message)
+        self.answer = answer
+        self.whole = whole
 
 
 class HostUncounted(Exception):

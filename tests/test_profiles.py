@@ -746,7 +746,7 @@ def test_a_support_search_table_it_cannot_use_is_refused(
 
 QUEUES_OFF = (
     "reread_marks_after_update = false\nsearch_support_after_edges = false\n"
-    "ask_circles_after_edges = false\n"
+    "place_lines_after_edges = false\nask_circles_after_edges = false\n"
 )
 
 
@@ -755,13 +755,15 @@ QUEUES_OFF = (
     [
         "reread_marks_after_update",
         "search_support_after_edges",
+        "place_lines_after_edges",
         "ask_circles_after_edges",
     ],
 )
 def test_a_queue_at_a_run_s_end_on_opencode_edges_is_refused(tmp_path, setting) -> None:
-    """The reread, the search and the circles are queue sessions on the
-    edges' agent where the profile seats no other: on OpenCode, which serves
-    none, a profile that leaves one on is refused when read."""
+    """The reread, the search, the placing and the circles are queue
+    sessions on the edges' agent where the profile seats no other: on
+    OpenCode, which serves none, a profile that leaves one on is refused
+    when read."""
     opencode = 'harness = "opencode"\nmodel = "opencode/deepseek-v4.1-flash"\n'
     off = QUEUES_OFF.replace(f"{setting} = false\n", "")
     path = _write(tmp_path, _profile("p", off, edges=opencode))

@@ -227,6 +227,10 @@ def narrowing_problems(
     where = f"circle {a.key}"
     problems: list[str] = []
     on = {(line.owner, line.text) for line in a.lines}
+    # the blocks some line of which names a part it leaves from
+    placed = {
+        e.source for e in sheet.edges if e.kind == "uses" and es.source_parts(sheet, e)
+    }
     members = {(owner, es.norm(words)) for owner, words in a.claims}
     taken: dict[tuple[str, str, str, str], tuple[str, str]] = {}
     given: dict[tuple[str, str, str, str], tuple[str, str]] = {}
@@ -268,10 +272,24 @@ def narrowing_problems(
             continue
         new = given[same][1]
         problems += [f"{where}: {p}" for p in _narrowed(text, new, owner)]
-        # a claim named at an about line's source end restates through it: only
-        # one of the circle's, never a route for a claim off it
+        # a claim named at an about line's or an assumed line's source end
+        # restates or assumes through it: only one of the circle's, never a
+        # route for a claim off it; a plain uses line's names the parts it
+        # leaves from, on a block already read by its parts alone
         own = es.EDGE.match(new)
         assert own is not None
+        if (
+            own.group("kind") == "uses"
+            and "assumed" not in (own.group("flag") or "").split()
+        ):
+            if _tokens(own.group("own")) and owner not in placed:
+                problems.append(
+                    f"{where}: ⟦{owner}⟧ {new}: names a part its line leaves from, "
+                    f"where {owner}'s lines name none: placing a block's lines is a "
+                    "word on every line of it and the parts each part writes, "
+                    "`place --ask`'s; keep this end as it is"
+                )
+            continue
         held = es.claim_handles(sheet, owner)
         for h in _tokens(own.group("own")) - {es.RESTATES_NONE}:
             if (owner, es.norm(held.get(h, ""))) not in members:
@@ -354,7 +372,9 @@ def _narrowed(old: str, new: str, owner: str) -> list[str]:
     brackets, changes nothing, or widens an end. A target end naming none
     may come to name parts or claims, one naming some a part of those; an
     about line's own end naming none may come to name claims or none
-    (`[-]`), one naming some a part of those, or none."""
+    (`[-]`), one naming some a part of those, or none; a uses line's may
+    come to name the parts it leaves from, one naming some a part of
+    those, never none."""
     o, n = es.EDGE.match(old), es.EDGE.match(new)
     assert o is not None and n is not None
     said = f"⟦{owner}⟧ {old} → {new}"
@@ -372,7 +392,12 @@ def _narrowed(old: str, new: str, owner: str) -> list[str]:
             f"{said}: its target end named [{', '.join(sorted(old_t))}]: it may "
             "name only some of those"
         )
-    if old_o and not (new_o == {es.RESTATES_NONE} or (new_o and new_o <= old_o)):
+    if o.group("kind") != "about" and es.RESTATES_NONE in new_o:
+        problems.append(
+            f"{said}: [{es.RESTATES_NONE}] is an about line's: a uses line's source "
+            "end names the parts it leaves from"
+        )
+    elif old_o and not (new_o == {es.RESTATES_NONE} or (new_o and new_o <= old_o)):
         problems.append(
             f"{said}: its source end named [{', '.join(sorted(old_o))}]: it may "
             f"name only some of those, or none ([{es.RESTATES_NONE}])"
@@ -443,7 +468,10 @@ REFINED = Tool(
                             **_NUMBERED,
                             "description": "an about line: the handles of its "
                             'own block\'s claims it restates for, or ["-"] for '
-                            "none; omit to leave that end as it is",
+                            "none; a uses line of a block whose lines name the "
+                            "parts they leave from: the labels of its own "
+                            "block's parts it leaves from; omit to leave that "
+                            "end as it is",
                         },
                     },
                 },

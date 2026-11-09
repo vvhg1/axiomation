@@ -189,6 +189,7 @@ class Profile:
     moved_delta_lines_max: int = 60
     reread_marks_after_update: bool = True
     search_support_after_edges: bool = True
+    place_lines_after_edges: bool = True
     ask_circles_after_edges: bool = True
     session_timeout_seconds: float = 900.0
     description: str = ""
@@ -233,6 +234,7 @@ _SETTINGS: dict[str, type | tuple[type, ...]] = {
     "moved_delta_lines_max": int,
     "reread_marks_after_update": bool,
     "search_support_after_edges": bool,
+    "place_lines_after_edges": bool,
     "ask_circles_after_edges": bool,
     "session_timeout_seconds": (int, float),
 }
@@ -434,6 +436,7 @@ def _profile(
         )
     for setting, what in (
         ("reread_marks_after_update", "an update with the reread"),
+        ("place_lines_after_edges", "a build or an update with the placing"),
         ("ask_circles_after_edges", "a build or an update with the circles question"),
     ):
         if (

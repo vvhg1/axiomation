@@ -1730,10 +1730,13 @@ class ExportLines:
 
     def edge_line(self, edge: Mapping[str, Any]) -> str:
         """An edge as the sheet holds it under its source: the source end's
-        claims after its kind, the target's claims among its parts."""
+        parts and claims after its kind, the target's claims among its
+        parts."""
         target, parts = self.target(edge)
-        own = self._named(edge["source"], edge.get("source_claims", ())) + (
-            [es.RESTATES_NONE] if edge.get("restates_none") else []
+        own = (
+            [entry_label(e) for e in edge.get("source_entries", [])]
+            + self._named(edge["source"], edge.get("source_claims", ()))
+            + ([es.RESTATES_NONE] if edge.get("restates_none") else [])
         )
         parts += self._named(
             edge["target"].get("block"), edge["target"].get("claims", ())
@@ -2778,6 +2781,35 @@ def new_words_owners(
     return found
 
 
+def _dropped_part_problems(
+    sheet: es.Sheet,
+    gone: Collection[tuple[str, str]],
+    opened: Collection[str] | None = None,
+) -> list[str]:
+    """Each line, of an owner `opened` (None: any), that names at either end
+    a part whose words the edit removed and the legend no longer holds."""
+    found = []
+    for e in sheet.edges:
+        if opened is not None and e.source not in opened:
+            continue
+        named = [("names", e.target, p) for p in e.parts] + [
+            ("leaves from", e.source, p) for p in es.source_parts(sheet, e)
+        ]
+        dropped = [
+            (says, p)
+            for says, block, p in named
+            if (block, p) in gone and (block, p) not in sheet.legend
+        ]
+        if dropped:
+            says, label = dropped[0]
+            found.append(
+                f"line {e.line}: {e.source} → {e.kind} {e.target} {says} "
+                f"[{label}], whose words the edit removed: name the block "
+                "whole, or a part its text holds now"
+            )
+    return found
+
+
 def update_reach(
     spec: dict[str, Any], sheet: es.Sheet
 ) -> tuple[set[str], list[Impact]]:
@@ -2903,15 +2935,7 @@ def _update_problems(spec: dict[str, Any], edited: str) -> list[str]:
                 f"is gone, so its words are: write `Δ [{d.label}] removed`, or "
                 "quote where the part stands now"
             )
-    for e in sheet.edges:
-        named = [p for p in e.parts if (e.target, p) in gone]
-        dropped = [p for p in named if (e.target, p) not in sheet.legend]
-        if dropped and e.source in opened:
-            found.append(
-                f"line {e.line}: {e.source} → {e.kind} {e.target} names "
-                f"[{dropped[0]}], whose words the edit removed: name the block "
-                "whole, or a part its text holds now"
-            )
+    found += _dropped_part_problems(sheet, gone, opened)
     as_shown = {(d.source, d.label, d.cls, d.note) for d in shown.deltas}
     for d in sheet.deltas:
         if (d.source, d.label, d.cls, d.note) in as_shown:
@@ -3351,18 +3375,7 @@ def _plain_problems(
                 f"is gone, so its words are: write `Δ [{d.label}] removed`, or "
                 "quote where the part stands now"
             )
-    for e in sheet.edges:
-        dropped = [
-            p
-            for p in e.parts
-            if (e.target, p) in gone and (e.target, p) not in sheet.legend
-        ]
-        if dropped:
-            found.append(
-                f"line {e.line}: {e.source} → {e.kind} {e.target} names "
-                f"[{dropped[0]}], whose words the edit removed: name the block "
-                "whole, or a part its text holds now"
-            )
+    found += _dropped_part_problems(sheet, gone)
     # the block whole's line speaks for the edges onto it whole, its group
     # and its qualifies edges: a part's lines alone would close them unread
     given = {d.source for d in sheet.deltas if not d.label}
@@ -4215,19 +4228,14 @@ def _fixed_problems(
     def part(sheet: es.Sheet, key: tuple[str, str]) -> tuple[str, str | None]:
         return sheet.legend[key], sheet.legend_roles.get(key)
 
-    used = {
-        (e.target, label)
-        for e in new.edges
-        if e.source in reopened
-        for label in e.parts
-    }
+    def named(sheet: es.Sheet, e: es.Edge) -> list[tuple[str, str]]:
+        return [(e.target, label) for label in e.parts] + [
+            (e.source, label) for label in es.source_parts(sheet, e)
+        ]
+
+    used = {key for e in new.edges if e.source in reopened for key in named(new, e)}
     # A part a fixed block's edge names is fixed with it, on whatever block.
-    held = {
-        (e.target, label)
-        for e in old.edges
-        if e.source not in reopened
-        for label in e.parts
-    }
+    held = {key for e in old.edges if e.source not in reopened for key in named(old, e)}
     for key in sorted(set(old.legend) | set(new.legend)):
         target, label = key
         if target in reopened and (key not in held or key in gone):
@@ -4322,6 +4330,9 @@ def records(
             target=target(e.target),
             evidence=(e.evidence,),
             parts=es.legend_labels(sheet, e.parts, e.target),
+            source_parts=(
+                es.source_parts(sheet, e) if e.kind == "uses" and not e.assumed else ()
+            ),
             mark=Mark(e.mark) if e.mark else None,
             where_used=e.where_used,
             note=e.note or None,

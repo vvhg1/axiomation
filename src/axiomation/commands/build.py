@@ -90,6 +90,7 @@ class Build:
     json: bool = False
     prompts: Path | None = None
     no_search: bool = False
+    no_place: bool = False
     no_circles: bool = False
     output: Path | None = None
     #: Develop mode: the store's answers folded again, asking nothing and
@@ -299,12 +300,51 @@ def run(asked: Build, say: Say) -> int:
         searched_whole = not {"unanswered", "refused"} & set(summary.get("support", {}))
         if (
             Stage.EDGES in settings.stages
-            and profile.ask_circles_after_edges
-            and not asked.no_circles
+            and profile.place_lines_after_edges
+            and not asked.no_place
             and searched_whole
         ):
             try:
-                # after the search, whose lines may close a circle
+                # after the search, before the circles, which read what the
+                # placed lines change of what claims rest on
+                placed = asks.place_after(
+                    store,
+                    last,
+                    profile,
+                    given.profiles,
+                    runner,
+                    agents[Stage.EDGES],
+                )
+            except BaseException:
+                # the state is kept and paid for: its summary is said whatever
+                # the placing raises
+                say.line(said(summary, asked.json))
+                raise
+            if placed is not None:
+                summary["place"], place_stop = placed
+                summary["spent"] = {
+                    "run": round(
+                        summary["spent"]["run"] + summary["place"].get("spent", 0.0),
+                        6,
+                    ),
+                    "store": round(sum(a.cost for a in store.answers()), 6),
+                }
+                if place_stop is Stop.BREACH:
+                    say.line(said(summary, asked.json))
+                    return Exit.BREACH
+                if "state" in summary["place"]:
+                    last = versions.state(store, summary["place"]["state"])
+        placed_whole = not {"unanswered", "refused"} & set(summary.get("place", {}))
+        if (
+            Stage.EDGES in settings.stages
+            and profile.ask_circles_after_edges
+            and not asked.no_circles
+            and searched_whole
+            and placed_whole
+        ):
+            try:
+                # after the search and the placing, whose lines may close or
+                # break a circle
                 circled = asks.circles_after(
                     store,
                     last,
@@ -336,7 +376,14 @@ def run(asked: Build, say: Say) -> int:
         say.note(
             f"axiomation build: state {summary['state']['id']} is kept; the search "
             "for its claims' support is not answered: `axiomation support PAPER "
-            "--ask` asks it, then `axiomation circles PAPER --ask`"
+            "--ask` asks it, then `axiomation place PAPER --ask` and `axiomation "
+            "circles PAPER --ask`"
+        )
+    if "unanswered" in summary.get("place", {}):
+        say.note(
+            f"axiomation build: state {summary['state']['id']} is kept; the placing "
+            "of its blocks' lines is not answered: `axiomation place PAPER --ask` "
+            "asks it, then `axiomation circles PAPER --ask`"
         )
     if "unanswered" in summary.get("circles", {}):
         say.note(
@@ -370,7 +417,7 @@ def _built(
         say.note(
             f"axiomation build: state {kept.id} of this version is kept, made "
             "under other settings, and stands: `axiomation review`, `reread`, "
-            "`support` and `circles` continue from it, `edit` changes it; a "
+            "`support`, `place` and `circles` continue from it, `edit` changes it; a "
             "build under these settings from nothing is a store of its own "
             "(--store)"
         )
@@ -839,6 +886,7 @@ def _review_arguments(review: argparse.ArgumentParser, staged: bool) -> None:
     prompts_argument(review)
     if not staged:
         no_search_argument(review)
+        no_place_argument(review)
         no_circles_argument(review)
     output_argument(review)
     # Tuning, hidden from --help: most are profile values a flag overrides.
@@ -891,6 +939,15 @@ def no_search_argument(command: argparse.ArgumentParser) -> None:
         action="store_true",
         help="skip the agent's search for support of the claims left standing "
         "unsupported, where the profile asks it (`support --ask` asks it later)",
+    )
+
+
+def no_place_argument(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--no-place",
+        action="store_true",
+        help="skip the agent's placing of the lines of the blocks a line enters at "
+        "a part, where the profile asks it (`place --ask` asks it later)",
     )
 
 

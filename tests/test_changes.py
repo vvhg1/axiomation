@@ -287,3 +287,27 @@ def test_each_record_counts_and_parts_pair_per_edge(cut):
     assert graph_changes(state(cut, before), state(cut, after)) == [
         GraphChange(Layer.EDGES, Change.RETRACTED, ("a2",), ())
     ]
+
+
+def test_the_parts_a_line_leaves_from_by_their_words_not_their_labels(cut):
+    """The definition's line onto the theorem leaves from its part [g]:
+    relabelled, nothing changed; leaving from the block whole, or from
+    another part, its parts changed."""
+    leaving = edge(1, DEFINITION, THEOREM)
+    before = EdgeRecords(
+        entries=(entry("g", "the gain"), entry("h", "the loss")),
+        edges=(replace(leaving, source_parts=("g",)),),
+    )
+    relabelled = EdgeRecords(
+        entries=(
+            entry("k", "the  gain", answer="b"),
+            entry("h", "the loss", answer="b"),
+        ),
+        edges=(replace(leaving, source_parts=("k",)),),
+    )
+    assert graph_changes(state(cut, before), state(cut, relabelled)) == []
+    for moved in ((), ("h",)):
+        after = replace(before, edges=(replace(leaving, source_parts=moved),))
+        assert graph_changes(state(cut, before), state(cut, after)) == [
+            GraphChange(Layer.EDGES, Change.PARTS_CHANGED, ("a1",), ("a1",))
+        ], moved

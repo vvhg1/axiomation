@@ -149,6 +149,7 @@ from axiomation.records import (
     Verdict,
     WorkUnread,
     filed_after,
+    unseen_by,
 )
 from axiomation.resolver import torn
 from axiomation.runner import Runner
@@ -290,6 +291,9 @@ class Brief:
     #: nodes of the blocks it reads (`AnswerRecord.read`); None, the whole
     #: text, or none where it settles alone (`settles`)
     read: tuple[str, ...] | None = None
+    #: the review round it is asked in (`review_round`): its gate reads a
+    #: finding the round settled as the brief does, as before the round
+    round_id: str | None = None
 
     @property
     def settles(self) -> bool:
@@ -1032,19 +1036,39 @@ def finding_questions(
     paper's order, each a question of the sheet's: its aspect, severity,
     anchors (as a find line names them, at the state), its words and
     problem, each cause and its proposal under it. A finding the round
-    asked again settled is read as it stood before (`_before_round`)."""
+    asked again settled is read as it stood before (`_before_round`), and
+    what its settling refuses so, as the runner's check reads it
+    (`records`): the round's own answers are its own, a person's are
+    not. Within a round a finding keeps its number: one another answer
+    settled since the round began is numbered still, and not asked, and
+    one that joined the round since is numbered after those it began with,
+    so no other task's key moves (`queue.task_key`)."""
     at = view.readings.at
     filed = view.store.authoritative()
-    # what its settling refuses is read as the store reads it now, as the
-    # runner's check reads it
-    now = {f.finding.id: f for f in view.readings.findings}
-    found: list[tuple[tuple[int, int], FindingQuestion]] = []
-    for f in _before_round(view, again):
+
+    def asks(f: judgments.FindingRead) -> bool:
         answer = filed.get(f.finding.answer or "")
         if not f.open or answer is None or not of_session(answer.kind, session):
-            continue
-        if not judgments.review_settles(f) or (f.live and f.proposal is None):
-            continue
+            return False
+        return judgments.review_settles(f) and not (f.live and f.proposal is None)
+
+    def place(f: judgments.FindingRead) -> tuple[int, int]:
+        block = view.readings.block_of(f.nodes[0]) if f.nodes else None
+        return (view.order(block), f.order)
+
+    asked = [f for f in _before_round(view, again) if asks(f)]
+    begun = RoundRead(again.answers | _filed_since(view.store, again), again.subjects)
+    held = {f.finding.id: place(f) for f in _before_round(view, begun) if asks(f)}
+    joined = {f.finding.id: place(f) for f in asked if f.finding.id not in held}
+    # the findings the round began with first, those that joined it after
+    ordered = [
+        finding
+        for places in (held, joined)
+        for finding, _ in sorted(places.items(), key=lambda item: item[1])
+    ]
+    number = {finding: n for n, finding in enumerate(ordered, 1)}
+    found: list[tuple[tuple[int, int], FindingQuestion]] = []
+    for f in asked:
         nodes = iter(f.walked.nodes)
         names: list[str] = []
         words: str | None = None
@@ -1095,19 +1119,35 @@ def finding_questions(
             line,
             hops,
             tuple(names),
-            settling(view, now.get(f.finding.id, f)),
+            settling(view, f),
             f.proposal is not None,
         )
         found.append(((view.order(block), f.order), FindingQuestion(sheet, f, block)))
     found.sort(key=lambda item: item[0])
     return [
         FindingQuestion(
-            replace(q.sheet, id=f"f{n}"),
+            replace(q.sheet, id=f"f{number[q.read.finding.id]}"),
             q.read,
             q.block,
         )
-        for n, (_, q) in enumerate(found, 1)
+        for _, q in found
     ]
+
+
+def _filed_since(store: RecordStore, again: RoundRead) -> frozenset[str]:
+    """The answers not the round's filed since the round began, that its
+    first answer did not see: what a person or another review settled
+    meanwhile, a copy's joined since among them. None where the round has
+    filed nothing."""
+    if not again.answers:
+        return frozenset()
+    order = store.filed_order()
+    began = min((order[k] for k in again.answers if k in order), default=None)
+    if began is None:
+        return frozenset()
+    return frozenset(
+        k for k, at in order.items() if k not in again.answers and unseen_by(at, began)
+    )
 
 
 def fixed_refusal(read: judgments.FindingRead) -> str | None:
@@ -1872,6 +1912,8 @@ class _Laid:
     #: keys: what its tools read on demand beside the works laid in
     #: (`Sources.entries`)
     entries: tuple[str, ...] = ()
+    #: the review round it is asked in (`review_round`)
+    round_id: str | None = None
 
 
 #: The sessions whose tools read any work of the paper's bibliography, a
@@ -1964,9 +2006,28 @@ def _laid(
         return tuple(i for i in sources.places(key, locator) if i in held[key])
 
     again = round_read(kept.store, round_id)
-    found, held = selected(
-        view, session, select, readable, candidates, kept.sheet, again, of_record
+    # a subject another answer read since the round began keeps its number,
+    # and is not asked: so no other task's key moves (`queue.task_key`)
+    since = _filed_since(kept.store, again)
+    meanwhile = (
+        frozenset(
+            (j.aspect, j.subject)
+            for j in kept.store.judgment_records().judgments
+            if j.answer in since
+        )
+        - again.subjects
     )
+    found, held = selected(
+        view,
+        session,
+        select,
+        readable,
+        candidates,
+        kept.sheet,
+        replace(again, subjects=again.subjects | meanwhile),
+        of_record,
+    )
+    found = [s for s in found if (s.aspect, s.subject) not in meanwhile]
     # every session settles the findings of its kind it reads, beside its
     # subjects or the text it reads
     questions = finding_questions(view, session, again)
@@ -2058,6 +2119,7 @@ def _laid(
         sources.entries()
         if sources is not None and session in READS_BIBLIOGRAPHY
         else (),
+        round_id,
     )
 
 
@@ -2239,6 +2301,7 @@ def _asked(
         tuple(held),
         {k: s for k, s in laid.stamps.items() if k in laid_in},
         None if read is None else tuple(read),
+        laid.round_id,
     )
 
 
@@ -3420,8 +3483,12 @@ def records(
         filed.append(record)
         held |= named
     answered: list[FindingAnswer] = []
-    # the finding as the store reads it now, not as the brief found it
-    now = {f.finding.id: f for f in view.readings.findings}
+    # the finding as the store reads it now, the round's own answers left
+    # out as the brief leaves them out: a resumed round replays them
+    now = {
+        f.finding.id: f
+        for f in _before_round(view, round_read(view.store, found.round_id))
+    }
     for s in sheet.settles:
         read = now[found.questions[s.question].read.finding.id]
         if s.settle is rf.Settle.FIXED:

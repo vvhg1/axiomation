@@ -2440,3 +2440,31 @@ def test_an_update_s_standing_on_a_block_with_no_claim_adds_it_as_a_build_does(
 
     again = update(v)
     assert dumps(update_payload(v.new.document, again, v.store)) == dumps(payload)
+
+
+def test_a_line_naming_a_part_the_legend_lost_reads_as_the_block_whole() -> None:
+    """At either end: the closure reads the line onto, or from, the block
+    whole, and a part the legend holds stays named."""
+    from axiomation.records import (
+        Edge,
+        EdgeKind,
+        EdgeRecords,
+        EdgeTarget,
+        Entry,
+        Role,
+        TargetKind,
+    )
+    from axiomation.update import _with_known_parts
+
+    line = Edge(
+        "e1", None, "d", EdgeKind.USES, EdgeTarget(TargetKind.BLOCK, "t"), ("w",)
+    )
+    records = EdgeRecords(
+        entries=(Entry("n1", None, "d", "g", "Let g be.", Role.DEFINITION),),
+        edges=(
+            dataclasses.replace(line, source_parts=("g",), parts=("x",)),
+            dataclasses.replace(line, id="e2", source_parts=("h",)),
+        ),
+    )
+    found = _with_known_parts(records).edges
+    assert [(e.source_parts, e.parts) for e in found] == [(("g",), ()), ((), ())]

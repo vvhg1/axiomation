@@ -1222,6 +1222,23 @@ def test_the_claims_a_line_names_round_trip_written_only_when_set(
     assert self_mark["claims"] == ["f is tiny"]
 
 
+def test_the_parts_a_line_leaves_from_round_trip_written_only_when_set(
+    tmp_path: Path,
+) -> None:
+    """A uses edge's source parts, labels of entries of its source block; a
+    record without them reads as leaving from the block whole."""
+    plain = edge_records()
+    leaving = replace(
+        plain, edges=(replace(plain.edges[0], source_parts=("gain",)), plain.edges[1])
+    )
+    store = RecordStore(tmp_path)
+    store.append(edges_answer(), edges=leaving)
+    assert RecordStore(tmp_path).edge_records_of("e1") == leaving
+    first, second = record_file.written(tmp_path, RecordKind.EDGES)
+    assert first["source_parts"] == ["gain"]
+    assert "source_parts" not in second
+
+
 def test_an_about_line_restating_none_round_trips_written_only_when_set(
     tmp_path: Path,
 ) -> None:

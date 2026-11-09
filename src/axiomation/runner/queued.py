@@ -14,7 +14,12 @@ where it has one. An answer accepted but not settled
 is dropped: its task is served again. A run with tasks still open and
 budget left starts fresh sessions on the rest; one whose sessions settled
 nothing stops. Without hosts it files what a stopped run's spool left and
-replays what the store holds.
+replays what the store holds. A recorded answer its step no longer takes
+stops the run (`Stop.QUEUE`), saying why: what was filed stays filed, and
+a spool it could not file is kept for the next run. A person's interrupt
+(`interruption`) ends both sessions; what they settled before it is
+filed, as at the budget, and the task in hand is served again; a run
+interrupted starts no further pair.
 
 A step's price (`price`) is what its session's start and each task cost:
 fitted on recorded runs, then measured on the store's sessions.
@@ -22,6 +27,7 @@ fitted on recorded runs, then measured on the store's sessions.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import time
@@ -34,11 +40,12 @@ from axiomation.questions import Question, QueueSession, Validation
 from axiomation.questions.review_file import current_kind
 from axiomation.records import RecordError, RecordStore
 from axiomation.resolver import Attempt, torn
-from axiomation.runner import Runner, Stop
+from axiomation.runner import Runner, Stop, cut_off, interruption
 from axiomation.runner.hosts import (
     Host,
     HostAnswer,
     HostBreach,
+    HostInterrupted,
     HostOutOfCredit,
     HostOverBudget,
     HostUncounted,
@@ -58,7 +65,8 @@ END_GRACE_SECONDS = 120.0
 class QueueReport:
     """A queue run: the tasks settled in it and those left open, the
     session records it wrote, what it spent, and why it stopped (None:
-    every task is settled, or no host was given)."""
+    every task is settled, or no host was given and the store's answers
+    replay)."""
 
     settled: int = 0
     open: int = 0
@@ -88,6 +96,8 @@ class _Ended:
     answer: HostAnswer
     stopped: Stop | None = None
     detail: str = ""
+    #: whether its cost is what the host said, not the least it spent
+    whole: bool = True
 
 
 def run_queue(
@@ -104,7 +114,20 @@ def run_queue(
     hosts, what the store holds replayed and nothing asked."""
     store = runner.resolver.store
     started = runner.spent
-    with runner.resolver.claim(), queue.opened(run) as workflow:
+    with (
+        runner.resolver.claim(),
+        interruption.held(),
+        contextlib.ExitStack() as current,
+    ):
+        workflow = current.enter_context(queue.opened(run))
+
+        def reopened() -> queue.Workflow:
+            # the store as it stands now: what a person or another run
+            # filed while a pair ran changes what the run draws, as it does
+            # for the next pair's servers
+            current.close()
+            return current.enter_context(queue.opened(run))
+
         steps = workflow.steps
         if hosts and len(hosts) != len(steps):
             raise ValueError(f"{len(steps)} steps take a host each, not {len(hosts)}")
@@ -112,98 +135,177 @@ def run_queue(
         settled = 0
         written: list[str] = []
         notes: list[str] = []
-        for left in sorted(run.directory.glob("spool-*.jsonl")):
-            n = _file(runner, workflow, run, queue.Spool(left))
-            settled += n
-            if n:
-                notes.append(f"filed {n} tasks a stopped run left; its cost is unknown")
-            left.unlink()
-        # a run that met a key joined copies answered apart refuses before
-        # it pays for any task: each run would end there again
-        conflicts = store.answer_conflicts()
-        met = next(
-            (
-                a.key
-                for a in store.answers()
-                if a.key in conflicts and (a.session or "").startswith(run.sessions)
-            ),
-            None,
-        )
-        if met is not None:
-            raise RecordError(torn(store, met) or met)
-        pair = 0
+        working = queue.Working(workflow)
+        position = queue.Position(None)
         stopped: Stop | None = None
         detail = ""
-        while True:
-            working = queue.Working(workflow)
-            position, _ = queue.advance(
-                workflow, working, queue.recorded(store, workflow)
-            )
-            if position.task is None or not hosts or stopped is not None:
-                break
-            # a task whose key joined copies answered apart is not served
-            # again: each run would pay for an answer no read takes
-            refusal = torn(store, position.key)
-            if refusal is not None:
-                raise RecordError(refusal)
-            left = runner.budget - runner.spent
-            if left <= 0:
-                stopped, detail = (
-                    Stop.BUDGET,
-                    f"the budget of ${runner.budget:g} is spent",
-                )
-                break
-            pair += 1
-            spool = queue.Spool(run.directory / f"spool-{pair}.jsonl")
-            spool.path.unlink(missing_ok=True)
-            sessions = []
-            for n, (step, host) in enumerate(zip(steps, hosts, strict=True)):
-                key = hashlib.sha256(
-                    json.dumps([run.key, pair, n, time.time()]).encode("utf-8")
-                ).hexdigest()
-                sid = f"{run.sessions}{key[:8]}"
-                server = queue.tool_server(run, n, sid, spool.path, wait_seconds)
-                sessions.append(
-                    _Session(
-                        n,
-                        key,
-                        sid,
-                        host,
-                        queue.queue_session(
-                            step, server, context_tokens, workflow.serving.files
-                        ),
-                        left * weights[n] / sum(weights),
-                    )
-                )
-                spool.append(
-                    {
-                        "type": "session",
-                        "session": sid,
-                        "step": n,
-                        "host": host.name,
-                        "model": host.model,
-                        "effort": host.effort,
+        try:
+            for left in sorted(run.directory.glob("spool-*.jsonl")):
+                spooled = queue.Spool(left)
+                n = _file(runner, workflow, run, spooled)
+                settled += n
+                if n:
+                    # its sessions' cost is on record where they ended and
+                    # only their filing failed
+                    costed = {
+                        a.session for a in store.answers() if a.kind == SESSION_KIND
                     }
+                    unknown = any(
+                        e["session"] not in costed
+                        for e in spooled.entries()
+                        if e["type"] == "session"
+                    )
+                    notes.append(
+                        f"filed {n} tasks a stopped run left"
+                        + ("; its cost is unknown" if unknown else "")
+                    )
+                left.unlink()
+            # a run that met a key joined copies answered apart refuses before
+            # it pays for any task: each run would end there again
+            conflicts = store.answer_conflicts()
+            met = next(
+                (
+                    a.key
+                    for a in store.answers()
+                    if a.key in conflicts and (a.session or "").startswith(run.sessions)
+                ),
+                None,
+            )
+            if met is not None:
+                raise RecordError(torn(store, met) or met)
+            pair = 0
+            while True:
+                working = queue.Working(workflow)
+                position, _ = queue.advance(
+                    workflow, working, queue.recorded(store, workflow)
                 )
-            ended = _sessions(sessions, spool, timeout)
-            for s in sessions:
-                runner.spent += ended[s.id].answer.cost
-            breached = any(e.stopped is Stop.BREACH for e in ended.values())
-            n = 0 if breached else _file(runner, workflow, run, spool)
-            settled += n
-            for s in sessions:
-                written.append(_session_record(runner, workflow, run, s, ended[s.id]))
-                (run.directory / f"{s.id}.json").unlink(missing_ok=True)
-            spool.path.unlink(missing_ok=True)
-            stops = [e for e in ended.values() if e.stopped is not None]
-            if stops:
-                first = next((e for e in stops if e.stopped is Stop.BREACH), stops[0])
-                stopped, detail = first.stopped, first.detail
-            elif n == 0:
-                stopped, detail = Stop.HOST, "the sessions settled no task"
+                if position.task is None or not hosts or stopped is not None:
+                    break
+                if interruption.interrupted():
+                    stopped, detail = (
+                        Stop.INTERRUPTED,
+                        interruption.stopped_words(queue=True),
+                    )
+                    break
+                # a task whose key joined copies answered apart is not served
+                # again: each run would pay for an answer no read takes
+                refusal = torn(store, position.key)
+                if refusal is not None:
+                    raise RecordError(refusal)
+                left = runner.budget - runner.spent
+                if left <= 0:
+                    stopped, detail = (
+                        Stop.BUDGET,
+                        f"the budget of ${runner.budget:g} is spent",
+                    )
+                    break
+                pair += 1
+                spool = queue.Spool(run.directory / f"spool-{pair}.jsonl")
+                spool.path.unlink(missing_ok=True)
+                sessions = []
+                for n, (step, host) in enumerate(zip(steps, hosts, strict=True)):
+                    key = hashlib.sha256(
+                        json.dumps([run.key, pair, n, time.time()]).encode("utf-8")
+                    ).hexdigest()
+                    sid = f"{run.sessions}{key[:8]}"
+                    server = queue.tool_server(run, n, sid, spool.path, wait_seconds)
+                    sessions.append(
+                        _Session(
+                            n,
+                            key,
+                            sid,
+                            host,
+                            queue.queue_session(
+                                step, server, context_tokens, workflow.serving.files
+                            ),
+                            left * weights[n] / sum(weights),
+                        )
+                    )
+                    spool.append(
+                        {
+                            "type": "session",
+                            "session": sid,
+                            "step": n,
+                            "host": host.name,
+                            "model": host.model,
+                            "effort": host.effort,
+                        }
+                    )
+                failed = _servers_failed(sessions)
+                if failed or interruption.interrupted():
+                    # no session runs, so none is paid for; an interrupt
+                    # reaches the servers being checked too, so it is the
+                    # stop's reason
+                    for s in sessions:
+                        (run.directory / f"{s.id}.json").unlink(missing_ok=True)
+                    spool.path.unlink(missing_ok=True)
+                    stopped, detail = (
+                        (Stop.INTERRUPTED, interruption.stopped_words(queue=True))
+                        if interruption.interrupted()
+                        else (Stop.HOST, failed)
+                    )
+                    break
+                ended = _sessions(sessions, spool, timeout)
+                workflow = reopened()
+                for s in sessions:
+                    runner.spent += ended[s.id].answer.cost
+                breached = any(e.stopped is Stop.BREACH for e in ended.values())
+                n = 0
+                unfiled: queue.QueueError | None = None
+                if not breached:
+                    try:
+                        n = _file(runner, workflow, run, spool)
+                    except queue.QueueError as error:
+                        # the sessions' records are written all the same, and
+                        # the spool kept: the next run files it, or stops so
+                        unfiled = error
+                settled += n
+                for s in sessions:
+                    given = ended[s.id]
+                    if unfiled is not None and given.stopped is None:
+                        # its cost is kept; the tasks it gave are not filed
+                        given = _Ended(given.answer, Stop.QUEUE, str(unfiled))
+                    written.append(_session_record(runner, workflow, run, s, given))
+                    (run.directory / f"{s.id}.json").unlink(missing_ok=True)
+                if unfiled is not None:
+                    raise unfiled
+                spool.path.unlink(missing_ok=True)
+                stops = [e for e in ended.values() if e.stopped is not None]
+                cut = [e for e in stops if e.stopped is Stop.INTERRUPTED]
+                floors = sum(not e.whole for e in cut)
+                if stops:
+                    first = next(
+                        (e for e in stops if e.stopped is Stop.BREACH), stops[0]
+                    )
+                    stopped, detail = first.stopped, first.detail
+                    if stopped is Stop.INTERRUPTED:
+                        detail = interruption.stopped_words(
+                            len(cut), floors, queue=True
+                        )
+                    elif cut:
+                        detail += "; " + interruption.cut_words(
+                            len(cut), floors, queue=True
+                        )
+                elif interruption.interrupted():
+                    # the pair ended as the interrupt came: what it settled
+                    # is filed, and no pair follows
+                    stopped, detail = (
+                        Stop.INTERRUPTED,
+                        interruption.stopped_words(queue=True),
+                    )
+                elif n == 0:
+                    stopped, detail = Stop.HOST, "the sessions settled no task"
+        except queue.QueueError as error:
+            stopped, detail = Stop.QUEUE, str(error)
+            # what the store's answers settle, up to the one refused
+            working = queue.Working(workflow)
+            with contextlib.suppress(queue.QueueError):
+                queue.advance(workflow, working, queue.recorded(store, workflow))
         return QueueReport(
             settled,
-            0 if position.task is None else open_tasks(workflow, working),
+            0
+            if position.task is None and stopped is not Stop.QUEUE
+            else open_tasks(workflow, working),
             tuple(written),
             runner.spent - started,
             stopped,
@@ -211,10 +313,36 @@ def run_queue(
         )
 
 
+def tasks_left(store: RecordStore, workflow: queue.Workflow) -> list[queue.Task]:
+    """The tasks a run of `workflow` would serve: those it draws that the
+    store's answers (a stopped run's among them) do not settle, up to an
+    answer its step no longer takes. What a dry run prices."""
+    working = queue.Working(workflow)
+    with contextlib.suppress(queue.QueueError):
+        queue.advance(workflow, working, queue.recorded(store, workflow))
+    done = working.ids
+    return [t for t in workflow.draw(working) if t.id not in done]
+
+
 def open_tasks(workflow: queue.Workflow, working: queue.Working) -> int:
     """The tasks the run still draws that no answer settled."""
     done = working.ids
     return sum(t.id not in done for t in workflow.draw(working))
+
+
+def _servers_failed(sessions: Sequence[_Session]) -> str:
+    """Why a pair cannot run, its steps' tool servers each started once as
+    its host starts it, at once: each that does not start, with its error;
+    empty where all do."""
+    with ThreadPoolExecutor(max_workers=len(sessions)) as pool:
+        errors = list(
+            pool.map(lambda s: s.host.tool_server_error(s.asked.server), sessions)
+        )
+    return "; ".join(
+        f"step {s.step}'s tool server did not start: {error}"
+        for s, error in zip(sessions, errors, strict=True)
+        if error is not None
+    )
 
 
 def _sessions(
@@ -232,6 +360,9 @@ def _sessions(
             return _Ended(refusal.answer, Stop.CREDIT, str(refusal))
         except HostUncounted as uncounted:
             return _Ended(uncounted.answer, Stop.UNCOUNTED, str(uncounted))
+        except HostInterrupted as cut:
+            return _Ended(cut.answer, Stop.INTERRUPTED, str(cut), cut.whole)
+
         except HostBreach as breach:
             for other in sessions:
                 other.host.abort()
@@ -356,23 +487,27 @@ class PriceError(ValueError):
 class Fitted:
     """A step's price fitted on recorded runs: on `model`, a session's
     start (its brief and the host's prompt written once, the call that
-    serves the first task) and each task's cost."""
+    serves the first task) and each task's cost; `like`, the step whose
+    runs they were recorded on, where not this step's own."""
 
     model: str
     start: float
     task: float
+    like: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Price:
     """What a step is expected to cost: its session's start and each task,
     and the sessions and tasks the task's cost was measured on in this
-    store (none: fitted)."""
+    store (none: fitted); `like`, the step whose runs the fit was recorded
+    on, where not its own."""
 
     start: float
     task: float
     sessions: int = 0
     tasks: int = 0
+    like: str | None = None
 
     def cost(self, tasks: int, sessions: int = 1) -> float:
         """A run of `tasks` tasks over `sessions` sessions: each session's
@@ -390,13 +525,17 @@ def price(store: RecordStore, template: str, model: str, fitted: Fitted) -> Pric
     scaled so. A session is matched by the model its host reported, so a
     profile naming an alias is priced as fitted. A model `prices.toml`
     does not price is priced by the store's sessions alone, each task
-    bearing its share of their starts, and refused where it holds none."""
+    bearing its share of their starts, and refused where it holds none.
+    A session an interrupt cut off is left out (`runner.cut_off`), and
+    one that gave tasks at no cost: its host never said what it spent."""
     sessions = [
         a
         for a in store.answers()
         if a.kind == SESSION_KIND
         and current_kind(a.template.name) == template
         and a.model == model
+        and (a.cost > 0 or not a.tasks)
+        and not cut_off(a)
     ]
     tasks = sum(len(a.tasks) for a in sessions)
     spent = sum(a.cost for a in sessions)
@@ -409,9 +548,13 @@ def price(store: RecordStore, template: str, model: str, fitted: Fitted) -> Pric
         return Price(0.0, spent / tasks, len(sessions), tasks)
     start = fitted.start * scale
     if not tasks:
-        return Price(start, fitted.task * scale)
+        return Price(start, fitted.task * scale, like=fitted.like)
     return Price(
-        start, max(spent - len(sessions) * start, 0.0) / tasks, len(sessions), tasks
+        start,
+        max(spent - len(sessions) * start, 0.0) / tasks,
+        len(sessions),
+        tasks,
+        fitted.like,
     )
 
 

@@ -120,6 +120,8 @@ class SourcesConfig:
     voyage_model: str = ""
     voyage_dims: int = 0
     bib: Path | None = None
+    #: the library switch (`UserKey.LIBRARY`); None where the file says none
+    library: LibrarySwitch | None = None
     origins: Mapping[str, SettingFrom] = field(
         default=MappingProxyType({}), compare=False
     )
@@ -144,7 +146,23 @@ class Settings:
     user: UserSettings = field(kw_only=True, repr=False)
 
 
-SOURCES_KEYS = ("collection", "voyage_model", "voyage_dims", "bib")
+SOURCES_KEYS = ("collection", "voyage_model", "voyage_dims", "bib", "library")
+
+
+class LibrarySwitch(StrEnum):
+    """The library switch (`UserKey.LIBRARY`): the library read where it
+    can be, or each work's PDF though it could be."""
+
+    ON = "on"
+    OFF = "off"
+
+
+def _switch(value: object) -> LibrarySwitch | None:
+    """`value` as the switch takes it; None where it is neither."""
+    try:
+        return LibrarySwitch(value)
+    except ValueError:
+        return None
 
 
 def _sources_section(data: Mapping[str, Any], path: Path) -> SourcesConfig:
@@ -171,6 +189,13 @@ def _sources_section(data: Mapping[str, Any], path: Path) -> SourcesConfig:
         values["voyage_dims"] = dims
     if "bib" in table:
         values["bib"] = path.parent / str(table["bib"])
+    if "library" in table:
+        switch = _switch(table["library"])
+        if switch is None:
+            raise SourcesError(
+                f'{path}: [sources].library is "on" or "off", not {table["library"]!r}'
+            )
+        values["library"] = switch
     section = SourcesConfig(**values)
     declared = {name: origin for name in values if getattr(section, name)}
     return replace(section, origins=MappingProxyType(declared))
@@ -251,6 +276,9 @@ class ResolvedSources:
     #: Where a work's PDF is found by its key (`<pdf_dir>/<key>.pdf`) when
     #: its entry names none on this machine; None where the person set none.
     pdf_dir: Path | None = None
+    #: OFF: each work is read from its PDF though the library could be
+    #: (`library_off`); ON, the default, reads the library where it can.
+    library: LibrarySwitch = LibrarySwitch.ON
     #: One entry per field above, naming where its value came from.
     origins: Mapping[str, SettingFrom] = MappingProxyType({})
 
@@ -270,6 +298,7 @@ class ResolvedSources:
             "zotero_url": self.zotero_url,
             "cache_dir": str(self.cache_dir) if self.cache_dir else None,
             "pdf_dir": str(self.pdf_dir) if self.pdf_dir else None,
+            "library": self.library.value,
             "origins": {name: origin.value for name, origin in self.origins.items()},
         }
 
@@ -296,6 +325,20 @@ def resolve(config: Settings) -> ResolvedSources:
         return found.value or default
 
     qdrant_url = personal(UserKey.QDRANT_URL, "")
+    # the shell's for one run, over a paper's or a workspace's, over the
+    # user file's
+    switched = config.user.get(UserKey.LIBRARY)
+    if switched.origin is UserOrigin.SHELL or declared.library is None:
+        given = personal(UserKey.LIBRARY, LibrarySwitch.ON.value)
+        found = _switch(given)
+        if found is None:
+            raise SourcesError(
+                f'library is "on" or "off", not {given!r}: read from '
+                f"{_where(config.user, UserKey.LIBRARY)}"
+            )
+        library = found
+    else:
+        library = declared.library
     voyage_model = declared_or(
         "voyage_model", DEFAULT_VOYAGE_MODEL, SettingFrom.DEFAULT
     )
@@ -318,6 +361,7 @@ def resolve(config: Settings) -> ResolvedSources:
 
     return ResolvedSources(
         qdrant_url=qdrant_url,
+        library=library,
         collection=str(collection),
         voyage_model=str(voyage_model),
         voyage_dims=int(voyage_dims),
@@ -360,8 +404,10 @@ def library_on(settings: ResolvedSources) -> bool:
 
 
 def library_off(settings: ResolvedSources) -> str:
-    """Why the library is not read, empty where it is: no `qdrant_url`
-    set, or the `[library]` extra not installed."""
+    """Why the library is not read, empty where it is: the switch says
+    "off", no `qdrant_url` set, or the `[library]` extra not installed."""
+    if settings.library is LibrarySwitch.OFF:
+        return f'library = "off" ({settings.origin("library").value})'
     installed = all(importlib.util.find_spec(name) for name in LIBRARY_MODULES)
     if not settings.qdrant_url:
         return "no qdrant_url is set" + (

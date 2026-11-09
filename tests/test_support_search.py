@@ -594,6 +594,22 @@ def test_a_task_is_priced_by_what_the_store_s_sessions_cost(tmp_path) -> None:
     assert ss.price(v.store, ss.WORKER_KIND, "fake/queue") == Price(0.0, 0.04, 1, 1)
 
 
+def test_a_dry_run_names_the_tasks_a_run_before_settled() -> None:
+    """A queue's dry run prices the tasks left, and says how many a run
+    stopped before settled."""
+    from axiomation.commands.asks import _queue_priced
+    from axiomation.commands.seating import QueueSeats
+    from axiomation.profiles import Agent, Harness
+
+    price = Price(0.5, 0.25)
+    seated = QueueSeats((Agent(Harness.CLAUDE_CODE, "claude-opus-5-5"),), (1.0,), None)
+    total, lines = _queue_priced(2, 5, "a claim", ss.WORKER_KIND, seated, price)
+    assert total == pytest.approx(0.5 + 2 * 0.25)
+    assert lines[0] == "expected $1.00: 2 tasks, 3 settled by a run before"
+    _, lines = _queue_priced(5, 5, "a claim", ss.WORKER_KIND, seated, price)
+    assert lines[0] == "expected $1.75: 5 tasks"
+
+
 # --- the command ----------------------------------------------------------------------
 
 

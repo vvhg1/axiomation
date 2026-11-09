@@ -46,7 +46,7 @@ from axiomation.exchange import (
     cut_from_payload,
     edges_answer_of,
     files_apart,
-    named_claims_key,
+    named_ends_key,
     vocabulary_of,
 )
 from axiomation.kept_change import (
@@ -1547,11 +1547,11 @@ class EdgeChange:
     it did (`EdgeStep`), its kind (`SELF_MARK` for a self mark), the node
     it is from, the block or group node it points at (None for a self
     mark, or an edge onto a scope, which its parts name), the parts it
-    names (its entries at the target, the claims it names at either end)
-    and, changed, those it named before (`was`), who
-    wrote it (`agent` or `person`), and, carried, the node of the split or
-    merge it went on to or came from (`piece`). Its evidence, note or
-    authorship rewritten is no change of it."""
+    names (its entries at the target, the claims it names at either end,
+    the entries of its source it leaves from) and, changed, those it named
+    before (`was`), who wrote it (`agent` or `person`), and, carried, the
+    node of the split or merge it went on to or came from (`piece`). Its
+    evidence, note or authorship rewritten is no change of it."""
 
     step: EdgeStep
     kind: str
@@ -1581,7 +1581,16 @@ class EdgeChange:
         ends = tuple(
             piece if end == node else end for end in (self.source, self.target)
         )
-        return (self.kind, ends, tuple(p.split(" [", 1)[-1] for p in self.parts))
+        # an entry its source leaves from keeps its `from `: never the
+        # same as the target's entry of that label
+        return (
+            self.kind,
+            ends,
+            tuple(
+                ("from " if p.startswith("from ") else "") + p.split(" [", 1)[-1]
+                for p in self.parts
+            ),
+        )
 
 
 def _carried(
@@ -1650,6 +1659,7 @@ def _kept_edges(lines: state_lines.Lines) -> dict[str, EdgeChange]:
                     *(target.get("entries") or ()),
                     *(f"“{c}”" for c in target.get("claims") or ()),
                     *(f"on “{c}”" for c in item.get("source_claims") or ()),
+                    *(f"from {p}" for p in item.get("source_entries") or ()),
                 )
                 # an edge onto a scope (the paper) points at no node
                 onto = target.get("block") or target.get("group")
@@ -2257,7 +2267,7 @@ def edge_ids(kept: State, export: Mapping[str, Any]) -> dict[str, tuple[Any, ...
     """Each edge of a kept export named across states: its source's node, its kind, its
     target's node (a block's or a group's; a file or the paper's scope as itself) and
     the words of the parts and the claims it names, normalised, and its `assumed`
-    flag (`exchange.named_claims_key`); nothing minted. By the edge's id in the
+    flag (`exchange.named_ends_key`); nothing minted. By the edge's id in the
     export."""
     nodes = {n.block: n.node for n in kept.nodes} | dict(kept.groups)
     anchors: dict[str, str] = {
@@ -2275,11 +2285,12 @@ def edge_ids(kept: State, export: Mapping[str, Any]) -> dict[str, tuple[Any, ...
             named = f"{kind}:{value}"
         parts = tuple(
             sorted(anchors.get(str(e), str(e)) for e in target.get("entries", []))
-        ) + named_claims_key(
+        ) + named_ends_key(
             target.get("claims", ()),
             edge.get("source_claims", ()),
             bool(edge.get("restates_none")),
             bool(edge.get("assumed")),
+            [anchors.get(str(e), str(e)) for e in edge.get("source_entries", [])],
         )
         found[edge["id"]] = (
             nodes.get(edge["source"], edge["source"]),

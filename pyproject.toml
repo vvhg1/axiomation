@@ -1,12 +1,11 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-fancy-pypi-readme>=24.1"]
 build-backend = "hatchling.build"
 
 [project]
 name = "axiomation"
-dynamic = ["version"]
+dynamic = ["version", "readme"]
 description = "Build the argument graph of a paper and keep it current."
-readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -48,6 +47,20 @@ dev = [
 
 [tool.hatch.version]
 path = "src/axiomation/__init__.py"
+
+# The description PyPI shows is the README, its banner block rewritten:
+# PyPI shows neither a relative image nor GitHub's theme fragments, so it
+# gets the light banner alone, at the release's tag (`tests/test_package.py`
+# holds the tag to `__version__`).
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '<img src="docs/assets/banner-light\.svg#gh-light-mode-only"([^>]*)>\s*<img src="docs/assets/banner-dark\.svg#gh-dark-mode-only"[^>]*>'
+replacement = '<img src="https://raw.githubusercontent.com/vvhg1/axiomation/v0.1.1/docs/assets/banner-light.svg"\1>'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/axiomation"]

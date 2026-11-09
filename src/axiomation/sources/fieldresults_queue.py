@@ -268,6 +268,7 @@ class Fielding:
         self.kept = kept
         self.view = view
         self.found = found
+        self.round = found.round_id
         self.listed = {f"r{i}": item for i, item in enumerate(listed, 1)}
         self.sources = sources
         self.author = author

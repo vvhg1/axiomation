@@ -12,9 +12,13 @@ An accepted answer returns the next task.
 **The working state** is the kept state with the lines the run settled so
 far laid over it: every task served, every read and every check sees
 them. Each task's key binds the kind, the stage, the template and its
-version, the workflow's steps, the state, the task as served and the key
-settled before it, so
-the run's answers replay in their order, and only in it (`advance`).
+version, the workflow's steps, the state, the task (its id and its text
+as its step renders it, not its place in the count), the key of the
+last answer that laid lines on the working state, and a review session's
+round, so an answer replays only on the working state and in the round
+it was given in (`advance`). A key 0.1.0 made
+(the task as served, its count with it, after the key settled before it)
+is looked up too, so a store of 0.1.0 resumes as it is.
 
 **Steps in lockstep.** A workflow may hand an answer to a second step,
 another model's session, before it settles. Both sessions run at once on
@@ -37,7 +41,9 @@ import hashlib
 import importlib
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -202,7 +208,10 @@ class Workflow(Protocol):
     the paper's order alone (a task drawn whole paper long, where the graph
     is what the run writes), and how its sessions are served. A workflow
     whose settled lines are its own notation, not a fragment, lays them
-    itself (`apply(sheet, lines)`, where it gives one)."""
+    itself (`apply(sheet, lines)`, where it gives one). A review session's
+    workflow names its review round (`round`, where it gives one): its
+    tasks' keys bind it, so another round, which a person's dismissal or
+    proposal makes, asks its tasks anew though their text is the same."""
 
     view: queries.View | None
     files: Path
@@ -224,12 +233,13 @@ class Workflow(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Settled:
-    """A task settled: its answers' keys, one a step it reached, and the
-    lines it settled."""
+    """A task settled: its answers' keys, one a step it reached, the lines
+    it settled, and the keys 0.1.0 gave its answers (`advance`)."""
 
     task: Task
     keys: tuple[str, ...]
     lines: str
+    keys_0_1_0: tuple[str, ...]
 
 
 class Working:
@@ -249,17 +259,33 @@ class Working:
         #: A workflow whose settled lines are its own notation, not a
         #: fragment, lays them over the sheet itself.
         self.apply: Callable[[str, str], str] | None = getattr(workflow, "apply", None)
+        #: the review round its tasks' keys bind, where it is one's
+        self.round: str | None = getattr(workflow, "round", None)
 
     @property
     def chain(self) -> str:
-        """The key settled last: what the next task's key follows."""
-        return self.settled[-1].keys[-1] if self.settled else ""
+        """What the next task's key follows: the key of the last answer
+        that laid lines on the working state, which is all a later task
+        sees of the answers before it; none where none laid any."""
+        laid = [s for s in self.settled if s.lines.strip()]
+        return laid[-1].keys[-1] if laid else ""
+
+    @property
+    def chain_0_1_0(self) -> str:
+        """What the next task's key followed in 0.1.0: the key settled last."""
+        return self.settled[-1].keys_0_1_0[-1] if self.settled else ""
 
     @property
     def ids(self) -> set[str]:
         return {s.task.id for s in self.settled}
 
-    def settle(self, task: Task, keys: Sequence[str], lines: str) -> None:
+    def settle(
+        self,
+        task: Task,
+        keys: Sequence[str],
+        lines: str,
+        keys_0_1_0: Sequence[str],
+    ) -> None:
         if lines.strip() and self.apply is not None:
             self.sheet = self.apply(self.sheet, lines)
         elif lines.strip():
@@ -269,7 +295,7 @@ class Working:
             )
             if self.reads is not None:
                 self.reads.settle(fragment.lines)
-        self.settled.append(Settled(task, tuple(keys), lines))
+        self.settled.append(Settled(task, tuple(keys), lines, tuple(keys_0_1_0)))
 
 
 def anchor_of(workflow: Workflow) -> str:
@@ -284,15 +310,23 @@ def anchor_of(workflow: Workflow) -> str:
 
 
 def task_key(
-    step: Step, at: str, served: str, after: str, steps: Sequence[str] = ()
+    step: Step,
+    at: str,
+    served: str,
+    after: str,
+    steps: Sequence[str] = (),
+    round_id: str | None = None,
 ) -> str:
     """A task's answer's key: its step's kind, stage, template and version,
     the kinds of its workflow's steps (an answer a later step settled is
-    not one that settles alone), the kept state, the task as served, and
-    the key settled before it."""
+    not one that settles alone), the kept state, the task as `served`, the
+    key it follows (`Working.chain`), and its review round where it is one's
+    (`Working.round`)."""
+    given = {"round": round_id} if round_id is not None else {}
     return hashlib.sha256(
         json.dumps(
             {
+                **given,
                 "kind": step.kind,
                 "stage": step.stage.value,
                 "template": step.template.name,
@@ -398,30 +432,45 @@ def advance(
         if not takes(workflow.steps[-1], task):
             raise QueueError(f"task {task.id}: the last step takes every task")
         head = f"task {task.id} ({len(done) + 1} of {len(done) + len(open_)})\n"
-        handed, keys, taken = task, [], []
+        handed, keys, keys_0_1_0, taken = task, [], [], []
         for n, step in enumerate(workflow.steps):
             last_step = n == len(workflow.steps) - 1
             if not last_step and not takes(step, handed):
                 continue
-            served = head + step.render(handed, working)
-            key = task_key(step, working.at, served, working.chain, kinds)
-            call = known.get(key)
+            rendered = step.render(handed, working)
+            served = head + rendered
+            key = task_key(
+                step,
+                working.at,
+                f"task {task.id}\n{rendered}",
+                working.chain,
+                kinds,
+                working.round,
+            )
+            old = task_key(step, working.at, served, working.chain_0_1_0, kinds)
+            found_key = key if key in known else old
+            call = known.get(found_key)
             if call is None:
                 used += taken
                 return Position(handed, n, served, key), used
             found = step.answer(handed, call.tool, call.args, working, check=False)
             if isinstance(found, Refused):
                 raise QueueError(
-                    f"task {task.id}'s recorded answer {key[:12]} reads no more: "
+                    f"task {task.id}'s recorded answer {found_key[:12]} reads no more: "
                     + "; ".join(found.problems)
                 )
-            keys.append(key)
+            # what the next task follows is the key its answer is stored
+            # under: one key, one answer
+            keys.append(found_key)
+            keys_0_1_0.append(old)
             if found.hand_on is None or last_step:
                 used += [dataclasses.replace(u, settled=True) for u in taken]
-                used.append(Used(key, n, handed, served, call, True, found.judgments))
-                working.settle(task, keys, found.lines)
+                used.append(
+                    Used(found_key, n, handed, served, call, True, found.judgments)
+                )
+                working.settle(task, keys, found.lines, keys_0_1_0)
                 break
-            taken.append(Used(key, n, handed, served, call, False))
+            taken.append(Used(found_key, n, handed, served, call, False))
             handed = Task(task.id, task.block, {**task.subject, **found.hand_on})
 
 
@@ -455,7 +504,11 @@ class Spool:
             return []
         with self._locked(fcntl.LOCK_SH) as handle:
             handle.seek(0)
-            return [json.loads(line) for line in handle.read().splitlines() if line]
+            written = handle.read()
+        # a server killed while it appended leaves its last line without
+        # its newline: that entry was never whole
+        whole = written if written.endswith("\n") else written.rpartition("\n")[0]
+        return [json.loads(line) for line in whole.splitlines() if line]
 
     def calls(self) -> dict[str, Call]:
         return {
@@ -565,20 +618,22 @@ def tool_server(
 ) -> ToolServer:
     """The tool server a step's session is given: this package's
     `queue.server` on a settings file written beside the spool, run by
-    this Python in isolated mode."""
-    path = run.directory / f"{session}.json"
+    this Python in isolated mode. Every path it is handed is absolute: the
+    host runs it in a directory of its own, whatever form the paper was
+    named in."""
+    path = (run.directory / f"{session}.json").resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
-                "store": str(run.store.directory),
+                "store": str(run.store.directory.resolve()),
                 "state": run.at.id,
                 "asked": isinstance(run.at, Asked),
                 "factory": run.factory,
                 "options": dict(run.options),
                 "step": step,
                 "session": session,
-                "spool": str(spool),
+                "spool": str(spool.resolve()),
                 "wait_seconds": wait,
             },
             indent=1,
@@ -598,6 +653,72 @@ def tool_server(
         env,
         wait + TOOL_LIMIT_MARGIN,
     )
+
+
+#: How long a tool server may take to list its tools: it opens its
+#: workflow first, which reads the kept state and the paper.
+SERVER_START_SECONDS = 300.0
+
+
+def started(server: ToolServer, seconds: float = SERVER_START_SECONDS) -> str | None:
+    """Why `server` does not start, else None: started as a host starts it,
+    from an empty directory of its own with its own environment, and asked
+    to begin and to list its tools. Its last error line where it lists
+    none."""
+    begin = (
+        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        + "\n"
+        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        + "\n"
+    )
+    with tempfile.TemporaryDirectory(prefix="axiomation-server-") as directory:
+        try:
+            ran = subprocess.run(
+                server.argv,
+                input=begin,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=directory,
+                env=dict(server.env),
+                timeout=seconds,
+                check=False,
+            )
+            out, err, code = ran.stdout, ran.stderr, str(ran.returncode)
+        except subprocess.TimeoutExpired as late:
+            # a server that listed its tools and then hung still started
+            out, err = _text(late.stdout), _text(late.stderr)
+            code = f"no end within {seconds:g} s"
+        except OSError as error:
+            return str(error)
+    if _lists_tools(out):
+        return None
+    errors = [line.strip() for line in err.splitlines() if line.strip()]
+    return errors[-1] if errors else f"it listed no tools ({code})"
+
+
+def _text(given: str | bytes | None) -> str:
+    if isinstance(given, bytes):
+        return given.decode("utf-8", "replace")
+    return given or ""
+
+
+def _lists_tools(out: str) -> bool:
+    """Whether a server's output holds its answer to `tools/list`."""
+    for line in out.splitlines():
+        try:
+            reply = json.loads(line)
+        except ValueError:
+            continue
+        if (
+            isinstance(reply, dict)
+            and reply.get("id") == 2
+            and isinstance(reply.get("result"), dict)
+            and "tools" in reply["result"]
+        ):
+            return True
+    return False
 
 
 def queue_session(

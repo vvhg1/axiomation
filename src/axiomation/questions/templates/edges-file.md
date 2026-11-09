@@ -62,6 +62,16 @@ edges, then the standing of each claim it makes, then a done mark:
   one the claim's ⊢ line shows, or one you give it there,
   `⊢ justified [main] · "…"`, unique in its block. Where the block's
   words do not say which claim, name none: the line then counts for each.
+- **Source part:** a uses line may name, in brackets after `uses`, the
+  parts of its own block it leaves from, by their labels in the legend:
+  `→ uses [<label>] <target> · "…"`, where only that part's words rely on
+  the target. A line from one part of a block onto another part of the
+  same block, `→ uses [<label>] <its own block> [<other label>] · "…"`,
+  says the first part's words write the second. A block one of whose
+  lines names a part it leaves from is read by its parts, each line naming
+  none leaving from the block whole: name one only where a task asks
+  where a block's lines leave from. A line written again keeps the parts
+  it leaves from as they stand.
 - **Marks:** `ref`, the evidence holds a `\ref` of the target; `name`,
   it names the target in words ("Theorem 3", "the second lemma"); `position`,
   it points at it by place ("the display below", "the previous step"). No mark
@@ -269,17 +279,19 @@ a long proof re-asks only its changed paragraphs. A target is:
   of edges keeps correct, re-checked on any edit or insertion; never for a
   scope restriction, which qualifies.
 
-No edge lies inside a block: a block whose claim carries its own reason or
-citation supports it itself, recorded as a self mark so that a missed
-outward edge never reads as self-support. Cycles between blocks are
-allowed (notation used before its definition, which uses it back).
+No edge lies inside a block, but a part's uses line onto another part of
+it (above): a block whose claim carries its own reason or citation
+supports it itself, recorded as a self mark so that a missed outward edge
+never reads as self-support. Cycles between blocks are allowed (notation
+used before its definition, which uses it back).
 
 **What one edge is.** One edge per source block, target and kind. A
 paragraph that writes the same defined symbol three times has one uses
 edge to its definition; another paragraph that uses it has its own edge.
 One exception: a block that argues T's claims apart, one case written out
 and another declared similar, writes one justifies line onto T per claim,
-each naming its claim, the second flagged `analogy`.
+each naming its claim, the second flagged `analogy`. So too a block's
+uses lines onto T that leave from disjoint parts of it.
 Both questions an edge is ever asked are about a whole paragraph: when the
 definition changes, does this paragraph's reliance still hold; when the
 paragraph changes, all its edges are found again together.

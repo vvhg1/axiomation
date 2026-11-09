@@ -1263,3 +1263,132 @@ def test_a_lemma_in_the_proof_of_a_conditional_result_takes_its_hypothesis(
     found = verdicts(store, kept)
     assert found["m"].established
     assert [handles(kept, [h.claim.node]) for h in found["m"].under] == [["k"]]
+
+
+#: A block of two definitions, `d`: g's sentence uses a1, h's uses a2, and
+#: a3 qualifies h. Theorem `t` declares a1; its proof `p` uses g alone.
+PARTS = [
+    ("a1", "Assume g is even."),
+    ("a2", "Assume h is odd."),
+    ("a3", "Assume h is finite."),
+    ("d", "Let g be a gain. Let h be a loss."),
+    ("t", "If g is even, g is bounded."),
+    ("p", "By the gain, g is bounded."),
+    ("e", "As h is a loss, g is bounded."),
+]
+PARTS_TEXT = " ".join(w for _, w in PARTS)
+
+
+def leaving(e: dict[str, Any], *parts: str) -> dict[str, Any]:
+    """`e` leaving from `parts` of its source block, as the export writes it."""
+    return {**e, "source_entries": list(parts)}
+
+
+def _undeclared_of(
+    tmp_path, *more: dict[str, Any], placed: bool = True, paths: bool = False
+):
+    """t's undeclared premises, by block, with d's lines leaving from its
+    parts where `placed`, else from d whole; `more` edges added; with
+    `paths`, each with its path's steps, by source and target block."""
+    edges = [
+        leaving(edge("d", "uses", "a1"), "d [g]")
+        if placed
+        else edge("d", "uses", "a1"),
+        leaving(edge("d", "uses", "a2"), "d [h]")
+        if placed
+        else edge("d", "uses", "a2"),
+        edge("a3", "qualifies", "d", "d [h]"),
+        edge("t", "uses", "a1"),
+        edge("p", "uses", "d", "d [g]"),
+        edge("p", "justifies", "t"),
+        *more,
+    ]
+    data = graph(PARTS_TEXT, PARTS, edges, [("t", "If g is even, g is bounded.")])
+    data["standings"][0]["status"] = "justified"
+    for b in data["blocks"]:
+        b["roles"] = (
+            ["assumption"]
+            if b["id"].startswith("a")
+            else ["definition"]
+            if b["id"] == "d"
+            else []
+        )
+    data["entries"] = [
+        {"id": "d [g]", "anchor": "Let g be a gain.", "role": "definition"},
+        {"id": "d [h]", "anchor": "Let h be a loss.", "role": "definition"},
+    ]
+    store, kept = built(tmp_path, data, PARTS_TEXT)
+    block = {n.node: n.block for n in kept.nodes}
+    found = undeclared(readings(store, kept))
+    if paths:
+        return {
+            block[u.premise]: [(block[s.source], block[s.target]) for s in u.path]
+            for u in found
+        }
+    return sorted(block[u.premise] for u in found)
+
+
+def test_an_edge_onto_a_part_of_a_placed_block_takes_in_that_part_s_lines(
+    tmp_path,
+) -> None:
+    """p uses d's g. Where d's lines leave from d whole, p's walk takes in
+    all of d: h's a2 and its qualifier a3 are undeclared premises of t.
+    Where each line names the part it leaves from, p's walk takes in g's
+    line alone: t declares all it rests on."""
+    assert _undeclared_of(tmp_path / "whole", placed=False) == ["a2", "a3"]
+    assert _undeclared_of(tmp_path / "placed") == []
+
+
+def test_a_part_using_a_sibling_part_takes_in_its_lines_and_qualifiers(
+    tmp_path,
+) -> None:
+    """g is written in terms of h: entering d at g enters h too, its line
+    onto a2 and a3's qualifier of h with it."""
+    sibling = leaving(edge("d", "uses", "d", "d [h]"), "d [g]")
+    assert _undeclared_of(tmp_path, sibling) == ["a2", "a3"]
+
+
+def test_a_placed_block_entered_again_whole_gives_every_line(tmp_path) -> None:
+    """p also uses e, which uses d whole: d, entered at g first, widens to
+    the whole block, and h's line and qualifier are taken in."""
+    more = [edge("p", "uses", "e"), edge("e", "uses", "d")]
+    assert _undeclared_of(tmp_path / "items", *more) == ["a2", "a3"]
+
+
+def test_a_line_given_at_a_widening_is_reached_through_the_edge_that_widened(
+    tmp_path,
+) -> None:
+    """d, entered at g by p's edge, gives h's line onto a2 only once e
+    enters it whole: a2's path runs through e, never through p's edge
+    onto g, which does not reach it; a3, h's qualifier, likewise."""
+    more = [edge("p", "uses", "e"), edge("e", "uses", "d")]
+    found = _undeclared_of(tmp_path, *more, paths=True)
+    assert found["a2"] == [("p", "e"), ("e", "d"), ("d", "a2")]
+    assert found["a3"] == [("p", "e"), ("e", "d"), ("a3", "d")]
+
+
+def test_a_line_from_the_block_whole_is_given_at_every_part(tmp_path) -> None:
+    """d's line onto a2 names no part: d placed by g's line, a2 is taken in
+    at g too, as are qualifiers of d whole."""
+    whole = [
+        edge("d", "uses", "a2"),
+        edge("a3", "qualifies", "d"),
+    ]
+    edges = [
+        leaving(edge("d", "uses", "a1"), "d [g]"),
+        *whole,
+        edge("t", "uses", "a1"),
+        edge("p", "uses", "d", "d [g]"),
+        edge("p", "justifies", "t"),
+    ]
+    data = graph(PARTS_TEXT, PARTS, edges, [("t", "If g is even, g is bounded.")])
+    data["standings"][0]["status"] = "justified"
+    for b in data["blocks"]:
+        b["roles"] = ["assumption"] if b["id"].startswith("a") else []
+    data["entries"] = [
+        {"id": "d [g]", "anchor": "Let g be a gain.", "role": "definition"}
+    ]
+    store, kept = built(tmp_path, data, PARTS_TEXT)
+    block = {n.node: n.block for n in kept.nodes}
+    found = sorted(block[u.premise] for u in undeclared(readings(store, kept)))
+    assert found == ["a2", "a3"]

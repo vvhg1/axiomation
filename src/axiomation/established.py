@@ -20,7 +20,10 @@ judgment, an open severity-3 finding or an open stale mark the gates ask
 (a description is not walked). A definition,
 an assumption or a part with no claim is walked through; a qualifies edge
 onto a walked node walks its source; a uses edge from a premise onto one
-it generalizes is notation, never walked. An edge onto a claim whose
+it generalizes is notation, never walked. A block whose lines name the
+parts they leave from (placed) is walked from the parts an edge onto it
+names, and the parts they use: their lines, and those of the block
+whole. An edge onto a claim whose
 argument holds its source relies on that claim's hypotheses, never its
 result, and asks nothing (`_Graph._walk`, `docs/model.md` § 9). A
 `conjectured` claim the statement takes as a hypothesis (an `assumed`
@@ -45,6 +48,7 @@ ambiguous line reads toward the alarm, never toward support.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -181,7 +185,9 @@ class PathStep:
     target), the edge's first evidence quote, and whether its line names
     no claim of a block that holds several (`fallback`): an ask that may
     mean any of them, or a justifies line that covers each. `edge` is the
-    export's edge it took, where it took one; it is not compared."""
+    export's edge it took, where it took one; `via`, where a placed block
+    gives the line only at a part entered after the first step into
+    `came_from`, the step that entered that part. Neither is compared."""
 
     came_from: str
     hop: Hop
@@ -190,6 +196,7 @@ class PathStep:
     quote: str | None = None
     fallback: bool = False
     edge: Mapping[str, Any] | None = field(default=None, compare=False, repr=False)
+    via: PathStep | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -213,20 +220,23 @@ class _Walked:
 
     def path(self, node: str) -> tuple[PathStep, ...]:
         """The steps from a start to `node`."""
-        found: list[PathStep] = []
-        while node in self.came:
-            step = self.came[node]
-            found.append(step)
-            node = step.came_from
-        return tuple(reversed(found))
+        return self.path_by(self.came[node]) if node in self.came else ()
 
     def path_to(self, claim: Claim) -> tuple[PathStep, ...]:
         """The steps from a start to the ask of `claim`, that ask last."""
         return self.path_by(self.asked[claim])
 
     def path_by(self, step: PathStep) -> tuple[PathStep, ...]:
-        """The steps from a start to an asking `step`, that step last."""
-        return (*self.path(step.came_from), step)
+        """The steps from a start to `step`, that step last: each step's
+        predecessor the one that entered its part (`via`), else the first
+        into the node it came from."""
+        found = [step]
+        while (
+            prev := step.via if step.via is not None else self.came.get(step.came_from)
+        ) is not None:
+            found.append(prev)
+            step = prev
+        return tuple(reversed(found))
 
 
 def _ask(
@@ -345,6 +355,19 @@ class _Graph:
             if source is not None and onto is not None:
                 self.generalized_by.setdefault(onto, []).append(source)
         self.entries = {e["id"]: e for e in export.get("entries", [])}
+        # the blocks whose lines name the parts they leave from, and each
+        # such part's sibling parts it uses (`docs/model.md` § 9)
+        self.placed: set[str] = set()
+        self.siblings: dict[str, dict[str, set[str]]] = {}
+        for e in at.edges:
+            leaving = e.get("source_entries") or []
+            if not leaving:
+                continue
+            self.placed.add(e["source"])
+            if self._sibling(e):
+                uses = self.siblings.setdefault(e["source"], {})
+                for p in leaving:
+                    uses.setdefault(p, set()).update(e["target"].get("entries") or [])
         self._hypotheses: dict[Claim, dict[Claim, list[Mapping[str, Any]]]] = {}
         self.works = readings.works
         self.assumptions = {
@@ -722,6 +745,47 @@ class _Graph:
             return [], False
         return list(held), len(held) > 1
 
+    @staticmethod
+    def _sibling(edge: Mapping[str, Any]) -> bool:
+        """Whether a line runs inside its block, from a part onto another."""
+        return (
+            edge["kind"] == "uses"
+            and edge["target"].get("block") == edge["source"]
+            and bool(edge.get("source_entries"))
+        )
+
+    def _entered(self, edge: Mapping[str, Any], onto: str) -> frozenset[str] | None:
+        """The parts of `onto` an edge relying on its content enters it at:
+        those it names, and the parts they use, where `onto` is placed; else
+        None, the block whole, as for an edge naming a claim."""
+        ident = self.at.ident_of.get(onto)
+        parts = edge["target"].get("entries") or []
+        if not parts or edge["target"].get("claims") or ident not in self.placed:
+            return None
+        uses = self.siblings.get(ident, {})
+        found = list(dict.fromkeys(parts))
+        for p in found:
+            found += [q for q in uses.get(p, ()) if q not in found]
+        return frozenset(found)
+
+    @staticmethod
+    def _gives(edge: Mapping[str, Any], scope: frozenset[str] | None) -> bool:
+        """Whether a node walked at the parts `scope` (None: whole) gives
+        a uses line out of it: one leaving from the block whole or from a
+        part of `scope`; a line inside the block only widens `scope`."""
+        if _Graph._sibling(edge):
+            return False
+        leaving = edge.get("source_entries")
+        return scope is None or not leaving or not scope.isdisjoint(leaving)
+
+    @staticmethod
+    def _qualified(edge: Mapping[str, Any], scope: frozenset[str] | None) -> bool:
+        """Whether a qualifies line onto a node walked at the parts `scope`
+        (None: whole) is taken in: one onto the block whole or a part of
+        `scope`."""
+        onto = edge["target"].get("entries")
+        return scope is None or not onto or not scope.isdisjoint(onto)
+
     def _containing(self, node: str) -> dict[str, str]:
         """Each node holding claims whose argument holds `node`, and theirs
         in turn, to the node it is reached from (`context`)."""
@@ -803,7 +867,15 @@ class _Graph:
         rest on the narrower one's premises, each would imply the other.
 
         A hypothesis of `c` (`hypotheses`) is asked by no edge: the walk
-        keeps the first step relying on it (`under`)."""
+        keeps the first step relying on it (`under`).
+
+        A placed block is walked at the parts an edge relying on its content
+        enters (`_entered`): the uses lines leaving from them or from the
+        block whole, the qualifies lines onto them or onto the block whole
+        (`_gives`, `_qualified`). Entered again at more parts, or whole (a
+        start, a member, a context's statement, a qualifier's source, an
+        edge naming no part), it widens and gives the lines it did not
+        give before."""
         hypotheses = self.hypotheses(c)
         under: dict[Claim, PathStep] = {}
 
@@ -822,11 +894,54 @@ class _Graph:
         assumptions: dict[str, None] = {}
         reason: Reason | None = None
 
-        def visit(node: str, step: PathStep) -> None:
-            if node not in seen and node not in stop:
+        # the parts each node is walked at, None for the block whole; the
+        # lines each node gave, so a node widened gives each line once
+        scope: dict[str, frozenset[str] | None] = dict.fromkeys(queue)
+        given: set[tuple[str, int]] = set()
+        # each node's first step in at each part (None: whole), in order
+        entered: dict[str, dict[str | None, tuple[int, PathStep]]] = {}
+        order = itertools.count()
+
+        def visit(
+            node: str, step: PathStep, parts: frozenset[str] | None = None
+        ) -> None:
+            if node in stop:
+                return
+            held_at = entered.setdefault(node, {})
+            for k in [None] if parts is None else sorted(parts):
+                if k not in held_at:
+                    held_at[k] = (next(order), step)
+            if node not in seen:
                 seen.add(node)
                 queue.append(node)
                 came[node] = step
+                scope[node] = parts
+                return
+            held = scope.get(node)
+            if held is not None:
+                wider = None if parts is None else held | parts
+                if wider != held:
+                    scope[node] = wider
+                    queue.append(node)
+
+        def once(node: str, edge: Mapping[str, Any]) -> bool:
+            if (node, id(edge)) in given:
+                return False
+            given.add((node, id(edge)))
+            return True
+
+        def via(node: str, parts: Sequence[str] | None) -> PathStep | None:
+            """The step that entered `node` at one of `parts` (None: a line
+            of the block whole) or whole, the earliest, where it is not
+            the first step into `node`: a line's path runs through it."""
+            if not parts:
+                return None
+            held_at = entered.get(node, {})
+            found = [held_at[k] for k in (*parts, None) if k in held_at]
+            if not found:
+                return None
+            step = min(found, key=lambda f: f[0])[1]
+            return None if step is came.get(node) else step
 
         # the claims whose arguments hold c's block, and theirs in turn:
         # their hypotheses are c's, their statements walked as content
@@ -860,8 +975,9 @@ class _Graph:
             # claims'; another claim's argument, reused, on c's in place of
             # those of the claims it argues
             bound = argued_within.keys() | (() if c.node in context else context)
+            parts = scope.get(x)
             for e in self.out.get(ident, []):
-                if e["kind"] != "uses":
+                if e["kind"] != "uses" or not self._gives(e, parts) or not once(x, e):
                     continue
                 key = e["target"].get("file")
                 if key is not None and code_file(self.at, key):
@@ -870,7 +986,16 @@ class _Graph:
                 if onto is None:
                     continue
                 relied, fallback = self._relied(e, onto)
-                step = PathStep(x, Hop.USES, x, onto, _quote(e), fallback, e)
+                step = PathStep(
+                    x,
+                    Hop.USES,
+                    x,
+                    onto,
+                    _quote(e),
+                    fallback,
+                    e,
+                    via(x, e.get("source_entries")),
+                )
                 if onto in bound and relied:
                     # a context edge: the hypotheses are walked already. A
                     # claim it relies on that the argument does not argue
@@ -890,16 +1015,30 @@ class _Graph:
                 for k in relied:
                     ask(k, fallback, step)
                 if not relied and x not in self.generalized_by.get(onto, ()):
-                    visit(onto, step)
+                    visit(onto, step, self._entered(e, onto))
             for e in self.into.get(ident, []):
-                if e["kind"] == "qualifies" and e["source"] in self.at.node_of:
+                if (
+                    e["kind"] == "qualifies"
+                    and e["source"] in self.at.node_of
+                    and self._qualified(e, parts)
+                    and once(x, e)
+                ):
                     source = self.at.node_of[e["source"]]
                     if source in stop:
                         continue
                     assumptions[source] = None
                     visit(
                         source,
-                        PathStep(x, Hop.QUALIFIES, source, x, _quote(e), False, e),
+                        PathStep(
+                            x,
+                            Hop.QUALIFIES,
+                            source,
+                            x,
+                            _quote(e),
+                            False,
+                            e,
+                            via(x, e["target"].get("entries")),
+                        ),
                     )
         return _Walked(
             reason,
@@ -1271,7 +1410,10 @@ def undeclared(readings: Readings) -> tuple[Undeclared, ...]:
         # qualifies edge in, no claim whose argument holds it
         ident = graph.at.ident_of[c.node]
         bare = (
-            not any(e["kind"] == "uses" for e in graph.out.get(ident, []))
+            not any(
+                e["kind"] == "uses" and not graph._sibling(e)
+                for e in graph.out.get(ident, [])
+            )
             and not any(e["kind"] == "qualifies" for e in graph.into.get(ident, []))
             and not set(graph.context.get(c.node, {})) - {c.node}
         )
@@ -1577,28 +1719,34 @@ def circle_key(
     graph: _Graph, claims: Iterable[Claim], lines: Iterable[CircleLine]
 ) -> str:
     """A circle's key: its lines (source, kind, target, the target end's
-    parts and claims, the source end's claims or none) and its claims
-    (node, words, standing). A text change that leaves them alone leaves
-    it (`docs/model.md` § 9)."""
+    parts and claims, the source end's claims or none, and its parts) and
+    its claims (node, words, standing). A text change that leaves them
+    alone leaves it (`docs/model.md` § 9)."""
     at = graph.at
+
+    def parts(entries: Iterable[str]) -> list[str]:
+        return sorted(
+            f"{graph.entries.get(p, {}).get('anchor', p)}"
+            f" ({graph.entries.get(p, {}).get('role')})"
+            for p in entries
+        )
 
     def end(edge: Mapping[str, Any] | None) -> list[Any]:
         if edge is None:
             return []
         target = edge["target"]
+        # a line leaving from parts adds them; one from the block whole adds
+        # nothing, so a circle read real under its key stays read real
+        leaving = edge.get("source_entries")
         return [
             at.node_of.get(edge["source"], edge["source"]),
             edge["kind"],
             graph._onto(edge),
-            sorted(
-                f"{graph.entries.get(p, {}).get('anchor', p)}"
-                f" ({graph.entries.get(p, {}).get('role')})"
-                for p in target.get("entries") or []
-            ),
+            parts(target.get("entries") or []),
             sorted(norm(w) for w in target.get("claims") or []),
             sorted(norm(w) for w in edge.get("source_claims") or []),
             bool(edge.get("restates_none")),
-        ]
+        ] + ([parts(leaving)] if leaving else [])
 
     data = {
         "claims": sorted([c.node, norm(c.words), c.status.value] for c in claims),

@@ -30,6 +30,11 @@
 # A Voyage API key, for embedding and searching the corpus.
 # voyage_api_key = "..."
 
+# "off" reads each cited work from its PDF, as without a Qdrant server.
+# A paper's [sources] may say so too; AXIOMATION_LIBRARY=off in the shell
+# says so for one run, over both. Default: "on".
+# library = "off"
+
 # --- Reading scanned pages -----------------------------------------------
 
 # The OCR engine: tesseract (the default), http, paddle, mineru or chat.

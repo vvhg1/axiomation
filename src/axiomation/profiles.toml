@@ -54,12 +54,18 @@ search_support_after_edges = true  # a build or an update that keeps a state hol
                                 # (`support --ask`), after the update's reread and before
                                 # the circles, from what is left of the budget: true or
                                 # false; `--no-search` skips it once
+place_lines_after_edges = true  # a build or an update that keeps a state holding blocks a
+                                # line enters at a part, whose own lines name no part they
+                                # leave from, ends with a queue of the edges agent naming
+                                # the part each line leaves from (`place --ask`), after the
+                                # search and before the circles, from what is left of the
+                                # budget: true or false; `--no-place` skips it once
 ask_circles_after_edges = true  # a build or an update that keeps a state holding circles of
                                 # what claims rest on ends with a queue of the edges agent
                                 # asking what each end on them relies on (`circles --ask`),
-                                # after the update's reread and the search, from what is
-                                # left of the budget: true or false; `--no-circles` skips it
-                                # once
+                                # after the update's reread, the search and the placing,
+                                # from what is left of the budget: true or false;
+                                # `--no-circles` skips it once
 session_timeout_seconds = 3600  # a session is ended after this long
 
 # Each stage's agent:
@@ -290,8 +296,9 @@ decide_passes = 0
 followup_sessions_max = 1
 reverse_prefilter = true
 session_timeout_seconds = 3600
-reread_marks_after_update = false  # the reread, the search and the circles run as queue
-search_support_after_edges = false  # sessions, which OpenCode serves not yet
+reread_marks_after_update = false  # the reread, the search, the placing and the circles
+search_support_after_edges = false  # run as queue sessions, which OpenCode serves not yet
+place_lines_after_edges = false
 ask_circles_after_edges = false
 
 [cheap.boundaries]
