@@ -14,7 +14,9 @@ stops, starting nothing more and letting the attempts in flight finish
 and be recorded, when the next attempt could pass the budget, when an
 attempt reaches its limit, when the host refuses for billing, or when the
 host fails three attempts in a row; on a breach of its directory it
-stops at once, and the host ends the attempts in flight. The budget is
+stops at once, and the host ends the attempts in flight. A person's
+interrupt (Ctrl-C, `interruption`) ends the attempts in flight, records
+none of them, and stops the run; no later `run` call asks anything. The budget is
 the runner's, across every `run` call: the driver's two stages share it.
 A runner given what like runs cost (`expect`, for a budget the paper's
 settings gave) also asks nothing of a `run` call whose questions are
@@ -40,10 +42,12 @@ from axiomation.questions import Question, Stage, Validation, reask
 from axiomation.questions.review_file import current_kind
 from axiomation.records import AnswerRecord, RecordError
 from axiomation.resolver import Attempt, Resolver, torn
+from axiomation.runner import interruption
 from axiomation.runner.hosts import (
     Host,
     HostAnswer,
     HostBreach,
+    HostInterrupted,
     HostOutOfCredit,
     HostOverBudget,
     HostUncounted,
@@ -85,14 +89,22 @@ class LikeRuns:
         return estimated * self.factor(template, fitted)
 
 
+def cut_off(answer: AnswerRecord) -> bool:
+    """Whether an interrupt cut the attempt or the queue session off: its
+    cost is then what it spent on work left undone, at times only the
+    least of it, so no measure of what like runs cost reads it."""
+    return any(p.startswith(f"{Stop.INTERRUPTED.value}: ") for p in answer.problems)
+
+
 def like_runs(answers: Iterable[AnswerRecord]) -> LikeRuns:
     """The store's cost over estimate per kind of run: the sum of what the
-    attempts cost over the sum of their estimates."""
+    attempts cost over the sum of their estimates, none an interrupt cut
+    off (`cut_off`)."""
     cost: dict[str, float] = {}
     estimated: dict[str, float] = {}
     counts: dict[str, int] = {}
     for answer in answers:
-        if not answer.estimate:
+        if not answer.estimate or cut_off(answer):
             continue
         name = like(answer.template.name)
         cost[name] = cost.get(name, 0.0) + answer.cost
@@ -117,6 +129,9 @@ class Stop(StrEnum):
     #: A queue run's recorded answer its step no longer takes
     #: (`queue.QueueError`): the run cannot go on past it.
     QUEUE = "queue"
+    #: A person interrupted the run (Ctrl-C): the sessions in flight were
+    #: ended (`interruption`).
+    INTERRUPTED = "interrupted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +168,10 @@ class _State:
     detail: str = ""
     host_failures: int = 0
     too_long: list[str] = field(default_factory=list)
+    #: the attempts an interrupt cut off, and those counted at the least
+    #: they spent (`HostInterrupted.whole`)
+    cut: int = 0
+    floors: int = 0
 
     def stop(self, why: Stop, detail: str) -> None:
         """Called under the lock. A breach overrides any other reason."""
@@ -221,7 +240,7 @@ class Runner:
     def run(self, questions: Sequence[Question], check: Check) -> RunReport:
         """Ask every question without an authoritative answer, holding the
         store for the run (`Resolver.claim`)."""
-        with self.resolver.claim():
+        with self.resolver.claim(), interruption.held():
             return self._run(questions, check)
 
     def _run(self, questions: Sequence[Question], check: Check) -> RunReport:
@@ -243,6 +262,12 @@ class Runner:
                 skipped.append(question.key)
             else:
                 todo.append(question)
+        if todo and interruption.interrupted():
+            return RunReport(
+                skipped=tuple(skipped),
+                stopped=Stop.INTERRUPTED,
+                detail=interruption.stopped_words(),
+            )
         expected = self._expected(todo)
         if expected is not None and expected > self.budget - self.spent:
             return RunReport(
@@ -290,8 +315,18 @@ class Runner:
             attempts=state.attempts,
             spent=state.spent - start,
             stopped=state.stopped,
-            detail="; ".join(filter(None, [state.detail, *state.too_long])),
+            detail=self._detail(state),
         )
+
+    @staticmethod
+    def _detail(state: _State) -> str:
+        """Why the run stopped, with the sessions an interrupt cut off under
+        whatever stop; then each question too long to ask again."""
+        if state.stopped is Stop.INTERRUPTED:
+            why = [interruption.stopped_words(state.cut, state.floors)]
+        else:
+            why = [state.detail, interruption.cut_words(state.cut, state.floors)]
+        return "; ".join(filter(None, [*why, *state.too_long]))
 
     def _expected(self, questions: Sequence[Question]) -> float | None:
         """What `questions` are expected to cost, one attempt each, by what
@@ -334,6 +369,8 @@ class Runner:
                 + question.turns_estimate
             )
             with state.lock:
+                if state.stopped is None and interruption.interrupted():
+                    state.stop(Stop.INTERRUPTED, "")
                 if state.stopped is not None:
                     return _Outcome.UNFINISHED
                 if state.spent + state.reserved + cost > self.budget:
@@ -369,6 +406,24 @@ class Runner:
                     state.spent += refusal.answer.cost
                     state.stop(Stop.CREDIT, str(refusal))
                 self._transcript(question, "refused", refusal.answer, keep=True)
+                return _Outcome.UNFINISHED
+            except HostInterrupted as cut:
+                # Cut off before it answered: recorded with what it spent,
+                # as an attempt at the budget is, never a failed answer;
+                # a resumed run asks it again from its first prompt.
+                with state.lock:
+                    state.reserved -= cost
+                    state.spent += cut.answer.cost
+                    state.cut += 1
+                    state.floors += not cut.whole
+                    state.stop(Stop.INTERRUPTED, "")
+                self._record(
+                    question,
+                    host,
+                    cut.answer,
+                    Validation(problems=(f"{Stop.INTERRUPTED.value}: {cut}",)),
+                    cost,
+                )
                 return _Outcome.UNFINISHED
             except HostUncounted as uncounted:
                 # Its cost stays out of `spent`, the host's figure: the

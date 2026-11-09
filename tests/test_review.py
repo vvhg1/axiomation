@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import types
 from dataclasses import replace
 from pathlib import Path
 
@@ -2476,6 +2477,36 @@ def test_review_s_dry_run_counts_what_it_holds_back(state, capsys) -> None:
         with pytest.raises(SystemExit):
             main(["review", *where, gone, *dry])
         assert f"unrecognized arguments: {gone}" in capsys.readouterr().err
+
+
+def test_a_dry_run_prices_an_answer_the_store_holds_at_nothing(state) -> None:
+    """A run stopped after the session answered, before the command filed
+    it: the dry run names the answer the store holds under the brief's key
+    and prices it at $0, as the command files it asking nothing."""
+    from axiomation.commands import review as reviewing
+    from axiomation.profiles import Agent, Harness
+    from axiomation.runner import LikeRuns
+
+    store, opened, found = state
+    agent = Agent(Harness.CLAUDE_CODE, "claude-opus-5-5", rates=FLAT)
+    said: list[str] = []
+    say = types.SimpleNamespace(line=said.append)
+    view = queries.View(store, opened.state)
+
+    assert reviewing._say_briefs(ARGUMENT, view, [found], agent, LikeRuns(), say) != (
+        0.0,
+        0.0,
+    )
+    run(store, opened, found, full(found))
+    said.clear()
+
+    assert reviewing._say_briefs(ARGUMENT, view, [found], agent, LikeRuns(), say) == (
+        0.0,
+        0.0,
+    )
+    assert said == [
+        f"argument: held, answer {found.question.key[:12]}: filed at $0, nothing asked"
+    ]
 
 
 def test_review_asks_the_seats_asked_by_default_and_names_the_rest(

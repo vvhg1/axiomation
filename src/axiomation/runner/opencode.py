@@ -73,10 +73,12 @@ from axiomation.runner.hosts import (
     DEFAULT_MODEL,
     HostAnswer,
     HostBreach,
+    HostInterrupted,
     HostOutOfCredit,
     HostUncounted,
     PromptTooLong,
 )
+from axiomation.runner.interruption import Waited, interrupted, waited
 
 AGENT = "answer"
 #: A session's agent.
@@ -205,12 +207,20 @@ def session_config(model: str, edit: str) -> dict[str, Any]:
 @dataclass(frozen=True, slots=True)
 class _Ran:
     """One `opencode run` process: its stdout and stderr, its exit code,
-    and whether it was ended for time."""
+    and how its wait ended (`Waited`)."""
 
     out: str
     err: str
     exit_code: int
-    timed_out: bool
+    ended: Waited
+
+    @property
+    def timed_out(self) -> bool:
+        return self.ended is Waited.TIMED_OUT
+
+    @property
+    def interrupted(self) -> bool:
+        return self.ended is Waited.INTERRUPTED
 
 
 def in_git_tree(path: Path) -> bool:
@@ -474,7 +484,16 @@ class OpenCodeHost:
         if workspace is not None and gate is not None:
             for _ in range(GATE_CONTINUATIONS):
                 left = timeout - (time.monotonic() - started)
-                if ran.timed_out or ran.exit_code != 0 or session is None or left <= 0:
+                if (
+                    ran.timed_out
+                    or ran.interrupted
+                    # no new process once the run is interrupted: what
+                    # this one wrote is the answer
+                    or interrupted()
+                    or ran.exit_code != 0
+                    or session is None
+                    or left <= 0
+                ):
                     break
                 reason = self._gate(workspace, gate, directory)
                 if reason is None:
@@ -513,6 +532,8 @@ class OpenCodeHost:
         errors = [answer.error] if answer.error else []
         if ran.timed_out:
             errors.append(f"timed out after {timeout:g} s")
+        if ran.interrupted:
+            errors.append("interrupted")
         exit_code = ran.exit_code
         if stderr.strip() and (exit_code != 0 or errors):
             errors.append(stderr.strip()[-2000:])
@@ -558,6 +579,11 @@ class OpenCodeHost:
                 raise HostBreach(
                     f"the model's {tool} named {path}, outside its directory", answer
                 )
+        if ran.interrupted:
+            # its `session export` says what it spent so far, where it can
+            raise HostInterrupted(
+                "the session was cut off by an interrupt", answer, whole=not uncounted
+            )
         if answer.error and BILLING.search(answer.error):
             raise HostOutOfCredit(answer.error, answer)
         if uncounted:
@@ -598,11 +624,9 @@ class OpenCodeHost:
         ]
         for reader in readers:
             reader.start()
-        timed_out = False
+        ended = Waited.TIMED_OUT
         try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+            ended = waited(process, timeout)
         finally:
             # `--standalone` starts a server of its own: end the whole
             # group, whether the leader finished or not, so nothing
@@ -617,8 +641,8 @@ class OpenCodeHost:
         return _Ran(
             out=b"".join(out).decode("utf-8", errors="replace"),
             err=b"".join(err).decode("utf-8", errors="replace"),
-            exit_code=process.returncode if not timed_out else -signal.SIGKILL,
-            timed_out=timed_out,
+            exit_code=process.returncode if ended is Waited.EXITED else -signal.SIGKILL,
+            ended=ended,
         )
 
 

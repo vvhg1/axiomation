@@ -45,7 +45,7 @@ from axiomation.questions import edge_sheet as es
 from axiomation.records import RecordStore
 from axiomation.runner import Runner, Stop
 from axiomation.runner import given as queue_given
-from axiomation.runner.queued import Price, QueueReport
+from axiomation.runner.queued import Price, QueueReport, tasks_left
 from axiomation.versions import State
 
 
@@ -166,6 +166,7 @@ def reread_asked(found: Reread, store: RecordStore, kept: State, say: Say) -> St
         with queue.opened(run) as rereading:
             assert isinstance(rereading, rereads.Rereading)
             asked = rereading.asked
+            left = len(tasks_left(store, rereading))
             if found.prompts is not None and asked:
                 write_queue_prompts(rereading, found.prompts)
     except rereads.RereadError as error:
@@ -183,7 +184,7 @@ def reread_asked(found: Reread, store: RecordStore, kept: State, say: Say) -> St
         except rereads.RereadError as error:
             raise UsageError(str(error)) from None
         cost, priced = _queue_priced(
-            len(asked), "an owner", rereads.KIND, seated, price
+            left, len(asked), "an owner", rereads.KIND, seated, price
         )
         lines[0] = "dry run, nothing asked or recorded: " + lines[0]
         lines += [
@@ -289,6 +290,7 @@ def support(found: Support, say: Say) -> Step:
     with queue.opened(run) as search:
         assert isinstance(search, support_search.Searching)
         asked = search.asked
+        left = len(tasks_left(store, search))
         if found.prompts is not None and asked:
             write_queue_prompts(search, found.prompts)
     if not asked:
@@ -300,7 +302,7 @@ def support(found: Support, say: Say) -> Step:
         f"support --ask at state {kept.id}: {len(asked)} claims; run {run.key[:12]}"
     ]
     if dry:
-        cost, priced = _search_priced(store, seated, len(asked))
+        cost, priced = _search_priced(store, seated, left)
         lines[0] = "dry run, nothing asked or recorded: " + lines[0]
         lines += [*priced, *_prompts_line(found.prompts, "briefs and tasks")]
         return Step("\n".join(lines), estimate=cost, adds_subjects=len(asked))
@@ -399,6 +401,7 @@ def circles_of(found: Circles, say: Say) -> Step:
         with queue.opened(run) as circling:
             assert isinstance(circling, circles.Circling)
             asked = circling.asked
+            left = len(tasks_left(store, circling))
             if found.prompts is not None and asked:
                 write_queue_prompts(circling, found.prompts)
     except circles.CircleError as error:
@@ -419,7 +422,7 @@ def circles_of(found: Circles, say: Say) -> Step:
         except circles.CircleError as error:
             raise UsageError(str(error)) from None
         cost, priced = _queue_priced(
-            len(asked), "a circle", circles.KIND, seated, price
+            left, len(asked), "a circle", circles.KIND, seated, price
         )
         lines[0] = "dry run, nothing asked or recorded: " + lines[0]
         lines += [
@@ -533,6 +536,7 @@ def place_of(found: Place, say: Say) -> Step:
         with queue.opened(run) as placed:
             assert isinstance(placed, placing.Placing)
             asked = placed.asked
+            left = len(tasks_left(store, placed))
             if found.prompts is not None and asked:
                 write_queue_prompts(placed, found.prompts)
     except placing.PlaceError as error:
@@ -548,7 +552,9 @@ def place_of(found: Place, say: Say) -> Step:
             price = placing.price(store, seated.model)
         except placing.PlaceError as error:
             raise UsageError(str(error)) from None
-        cost, priced = _queue_priced(len(asked), "a block", placing.KIND, seated, price)
+        cost, priced = _queue_priced(
+            left, len(asked), "a block", placing.KIND, seated, price
+        )
         lines[0] = "dry run, nothing asked or recorded: " + lines[0]
         lines += [
             *priced,
@@ -615,16 +621,19 @@ def _search_priced(
 
 def _queue_priced(
     tasks: int,
+    of: int,
     what: str,
     kind: str,
     seated: QueueSeats,
     price: Price,
 ) -> tuple[float, list[str]]:
-    """A one-step queue's dry run price on `tasks`, each `what`: the price
-    and its lines, the whole, then its step's."""
+    """A one-step queue's dry run price on the `tasks` left of its `of`
+    (`queued.tasks_left`), each `what`: the price and its lines, the
+    whole, then its step's."""
     total = price.cost(tasks)
     return total, [
-        f"expected ${total:.2f}: {tasks} tasks",
+        f"expected ${total:.2f}: {tasks} tasks"
+        + (f", {of - tasks} settled by a run before" if tasks < of else ""),
         seating.priced_words(kind, seated.model, price, what),
     ]
 

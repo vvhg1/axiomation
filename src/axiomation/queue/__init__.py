@@ -504,7 +504,11 @@ class Spool:
             return []
         with self._locked(fcntl.LOCK_SH) as handle:
             handle.seek(0)
-            return [json.loads(line) for line in handle.read().splitlines() if line]
+            written = handle.read()
+        # a server killed while it appended leaves its last line without
+        # its newline: that entry was never whole
+        whole = written if written.endswith("\n") else written.rpartition("\n")[0]
+        return [json.loads(line) for line in whole.splitlines() if line]
 
     def calls(self) -> dict[str, Call]:
         return {

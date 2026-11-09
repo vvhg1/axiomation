@@ -321,6 +321,20 @@ every command that asks: `build`, `update`, `sync`, `review`, and the
 `--host none`, which asks nothing and goes on from what the store
 holds.
 
+**Ctrl-C** while a run asks ends the sessions in flight and prints
+`stopped: interrupted` with what was spent. A session cut off that
+answers in one file records nothing and is asked again from its start.
+A session that settles task by task (the citation, methods and
+fieldresults reviews, `support`, `reread`, `place`, `circles`) files the
+tasks it settled, and the one it was on is asked again. What a cut
+session spent is counted against the budget; under Claude Code, which
+says a session's cost only at its end, it is the least it spent, from
+the turns it took. The command's `--dry-run` then prices only what is
+left: an answer the store holds is filed at $0, and a queue's settled
+tasks are not priced again. A second Ctrl-C, or one between a command's steps,
+ends the command in one line. Either way the command ends as an
+interrupted process (status 130), so a script that runs it stops too.
+
 `standard` is the profile when neither `--profile` nor `--host` is
 given. A build of a version already built asks nothing: it names the
 kept state (and writes its export with `-o`). Its graph is never

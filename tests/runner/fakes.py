@@ -452,7 +452,14 @@ record = {{
     "claude_tmp": os.environ.get("CLAUDE_CODE_TMPDIR"),
     "cache_ttl": os.environ.get("CLAUDE_CODE_PROMPT_CACHE_TTL"),
     "gate_at": os.environ.get("AXIOMATION_GATE"),
+    "pid": os.getpid(),
 }}
+# A child of the session, as a tool server is: in its process group.
+if os.environ.get("FAKE_CLAUDE_CHILD"):
+    import subprocess
+    record["child_pid"] = subprocess.Popen(
+        ["sleep", os.environ["FAKE_CLAUDE_CHILD"]]
+    ).pid
 for flag in ("--append-system-prompt-file", "--system-prompt-file"):
     if flag in argv:
         brief = pathlib.Path(argv[argv.index(flag) + 1])
@@ -493,6 +500,15 @@ def say(event):
     sys.stdout.write(json.dumps(event) + "\\n")
 
 say({{"type": "system", "subtype": "init", "cwd": os.getcwd()}})
+# One turn's message, as Claude Code streams it: twice, each with its usage.
+if os.environ.get("FAKE_CLAUDE_TURN"):
+    for _ in range(2):
+        say({{"type": "assistant", "message": {{
+            "id": "msg_1", "model": os.environ["FAKE_CLAUDE_TURN"],
+            "content": [], "usage": {{"input_tokens": 1000, "output_tokens": 500,
+                "cache_read_input_tokens": 20000,
+                "cache_creation_input_tokens": 4000}}}}}})
+    sys.stdout.flush()
 edit = os.environ.get("FAKE_CLAUDE_EDIT")
 # An author's file only: in a judge's (its edits flagged `proposed`) the
 # fake keeps everything, as a judge may change no marker. A roles
@@ -662,7 +678,10 @@ def fake_claude(directory: Path) -> Path:
     and new text, split by `|||`) to an author's `cut.md` as an Edit, and
     keeps a judge's as it is; reports
     `$FAKE_CLAUDE_TOOL` (a JSON tool use, refused unless `"refused":
-    false`); makes a project entry under `$FAKE_CLAUDE_PROJECTS`; and ends
+    false`); makes a project entry under `$FAKE_CLAUDE_PROJECTS`; starts
+    a child that sleeps `$FAKE_CLAUDE_CHILD` seconds, logged as
+    `child_pid`; streams one turn on the model `$FAKE_CLAUDE_TURN`;
+    sleeps `$FAKE_CLAUDE_SLEEP` seconds; and ends
     with a result costing `$FAKE_CLAUDE_COST`, none with
     `$FAKE_CLAUDE_NO_COST`, an error with `$FAKE_CLAUDE_ERROR`."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -684,6 +703,8 @@ FAKE_CLAUDE_ENV = (
     "FAKE_CLAUDE_EDIT_RE",
     "FAKE_CLAUDE_TOOL",
     "FAKE_CLAUDE_SLEEP",
+    "FAKE_CLAUDE_CHILD",
+    "FAKE_CLAUDE_TURN",
     "FAKE_CLAUDE_ERROR",
     "FAKE_CLAUDE_SUBTYPE",
     "FAKE_CLAUDE_TEXT",
@@ -699,8 +720,8 @@ class FakeQueueHost:
     session through its tool server, served in this process, where
     `call(name, args)` gives the tool's text and whether it was refused;
     it returns the session's last message. Each session costs `cost`;
-    with `ends`, it then raises that host exception (`HostOverBudget`,
-    …) with its answer. Its tool server starts unless `server_error`
+    with `ends`, it then raises the host exception `ends(message, answer)`
+    makes (`HostOverBudget`, …). Its tool server starts unless `server_error`
     says why not."""
 
     name = "fake-queue"
@@ -711,7 +732,7 @@ class FakeQueueHost:
         script: Callable[[Callable[[str, dict], tuple[str, bool]]], str],
         cost: float = 0.01,
         model: str = "fake/queue",
-        ends: type[Exception] | None = None,
+        ends: Callable[[str, HostAnswer], Exception] | None = None,
         server_error: str | None = None,
     ) -> None:
         self.script = script

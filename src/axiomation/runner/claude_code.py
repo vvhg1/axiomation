@@ -82,11 +82,14 @@ from axiomation.queue import SERVER_START_SECONDS, started
 from axiomation.runner.hosts import (
     HostAnswer,
     HostBreach,
+    HostInterrupted,
     HostOutOfCredit,
     HostOverBudget,
     HostUncounted,
+    rates_for,
     written_tools,
 )
+from axiomation.runner.interruption import Waited, waited
 from axiomation.runner.opencode import (
     BILLING,
     GATE_SECONDS,
@@ -770,12 +773,11 @@ class ClaudeCodeHost:
         ]
         for reader in readers:
             reader.start()
-        timed_out = False
+        ended = Waited.TIMED_OUT
         try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+            ended = waited(process, timeout)
         finally:
+            # the session's group: its tool servers end with it
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)
             process.wait()
@@ -783,16 +785,30 @@ class ClaudeCodeHost:
                 reader.join(DRAIN_SECONDS)
             with self._live_lock:
                 self._live.discard(process)
+        timed_out = ended is Waited.TIMED_OUT
         seconds = time.monotonic() - started
         transcript = b"".join(out).decode("utf-8", errors="replace")
         stderr = b"".join(err).decode("utf-8", errors="replace")
         events = parse(transcript)
         transcript += _gate_checks(root)
 
+        whole = ended is Waited.INTERRUPTED and events.cost is not None
+        if whole:
+            # its last event came before the kill: the answer is whole, and
+            # paid for, so it is kept as if the session had ended itself
+            ended = Waited.EXITED
         errors = [events.error] if events.error else []
         if timed_out:
             errors.append(f"timed out after {timeout:g} s")
-        exit_code = process.returncode if not timed_out else -signal.SIGKILL
+        if ended is Waited.INTERRUPTED:
+            errors.append("interrupted")
+        exit_code = (
+            0
+            if whole
+            else process.returncode
+            if ended is Waited.EXITED
+            else -signal.SIGKILL
+        )
         if stderr.strip() and (exit_code != 0 or errors):
             errors.append(stderr.strip()[-2000:])
         if exit_code != 0 and not errors:
@@ -806,12 +822,14 @@ class ClaudeCodeHost:
                 text = read_regular(edited) if edited.exists() else ""
             except NotRegularFile as error:
                 text, planted = "", f"the session's answer file is no file: {error}"
+        cut = ended is Waited.INTERRUPTED
         answer = HostAnswer(
             text=text,
             model=self.model,
-            cost=events.cost or 0.0,
-            tokens=events.tokens,
-            tokens_by_model=events.tokens_by_model,
+            # cut off before its result, what its turns show it spent
+            cost=events.turns_priced() if cut else events.cost or 0.0,
+            tokens=_summed(events.turns_by_model) if cut else events.tokens,
+            tokens_by_model=events.turns_by_model if cut else events.tokens_by_model,
             seconds=seconds,
             tool_uses=events.tool_uses,
             transcript=transcript,
@@ -821,6 +839,10 @@ class ClaudeCodeHost:
         breached = planted or breach(events.tool_uses)
         if breached:
             raise HostBreach(breached, answer)
+        if ended is Waited.INTERRUPTED:
+            raise HostInterrupted(
+                "the session was cut off by an interrupt", answer, whole=False
+            )
         if answer.error and BILLING.search(answer.error):
             raise HostOutOfCredit(answer.error, answer)
         if events.over_budget:
@@ -891,6 +913,20 @@ class Events:
     tool_uses: tuple[dict[str, Any], ...] = ()
     #: The session ended at its `--max-budget-usd`.
     over_budget: bool = False
+    #: Each turn's counts as its `assistant` events give them, by model:
+    #: what a session cut off before its result had spent so far.
+    turns_by_model: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    def turns_priced(self) -> float:
+        """What the turns cost at `prices.toml`'s rates, a model it does
+        not price left out: the least the session spent, since a turn's
+        stream counts less output than its result does."""
+        found = 0.0
+        for model, tokens in self.turns_by_model.items():
+            rates = rates_for(model)
+            if rates is not None:
+                found += rates.priced(tokens)
+        return found
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -927,6 +963,15 @@ def _by_model(usage: dict[str, Any]) -> dict[str, dict[str, int]]:
     return found
 
 
+def _summed(by_model: Mapping[str, Mapping[str, int]]) -> dict[str, int]:
+    """Counts by model summed over the models."""
+    found: dict[str, int] = {}
+    for tokens in by_model.values():
+        for name, n in tokens.items():
+            found[name] = found.get(name, 0) + n
+    return found
+
+
 def _usage(usage: dict[str, Any]) -> dict[str, int]:
     """A `result` event's `usage`, where it names no `modelUsage`: the last
     turn it was woken for, on the session's own model."""
@@ -948,10 +993,18 @@ def parse(transcript: str) -> Events:
     found = Events()
     uses: dict[str, dict[str, Any]] = {}
     order: list[str] = []
+    # a turn's message comes as several events, each with its usage
+    turns: dict[str, tuple[str, dict[str, int]]] = {}
     for event in _events(transcript):
         kind = event.get("type")
-        content = _list(_dict(event.get("message")).get("content"))
+        message = _dict(event.get("message"))
+        content = _list(message.get("content"))
         if kind == "assistant":
+            if message.get("id") and isinstance(message.get("usage"), dict):
+                turns[str(message["id"])] = (
+                    str(message.get("model") or ""),
+                    _usage(message["usage"]),
+                )
             for item in content:
                 if isinstance(item, dict) and item.get("type") == "tool_use":
                     key = str(item.get("id") or len(order))
@@ -988,6 +1041,10 @@ def parse(transcript: str) -> Events:
                 found.error = f"{event.get('subtype') or 'error'}: {found.text}".strip()
             found.over_budget = event.get("subtype") == OVER_BUDGET
     found.tool_uses = tuple(uses[key] for key in order)
+    for model, tokens in turns.values():
+        into = found.turns_by_model.setdefault(model, {})
+        for name, n in tokens.items():
+            into[name] = into.get(name, 0) + n
     return found
 
 

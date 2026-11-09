@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import random
 import shutil
+import signal
 import tempfile
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import pytest
 
 from axiomation import develop, keys, records, user_settings, versions
 from axiomation.derived import CACHE_VARIABLE
+from axiomation.runner import interruption
 from axiomation.runner.claude_code import TMP
 
 
@@ -42,6 +44,18 @@ def derived_cache(tmp_path_factory, monkeypatch):
     directory = tmp_path_factory.mktemp("axiomation-cache")
     monkeypatch.setenv(CACHE_VARIABLE, str(directory))
     return directory
+
+
+@pytest.fixture(autouse=True)
+def _not_interrupted():
+    """No test meets another's interrupt: the flag is the process's
+    (`runner.interruption`), and Python's own SIGINT handler is back
+    after each test."""
+    interruption.clear()
+    handler = signal.getsignal(signal.SIGINT)
+    yield
+    interruption.clear()
+    signal.signal(signal.SIGINT, handler)
 
 
 @pytest.fixture(autouse=True)

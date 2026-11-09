@@ -16,7 +16,10 @@ budget left starts fresh sessions on the rest; one whose sessions settled
 nothing stops. Without hosts it files what a stopped run's spool left and
 replays what the store holds. A recorded answer its step no longer takes
 stops the run (`Stop.QUEUE`), saying why: what was filed stays filed, and
-a spool it could not file is kept for the next run.
+a spool it could not file is kept for the next run. A person's interrupt
+(`interruption`) ends both sessions; what they settled before it is
+filed, as at the budget, and the task in hand is served again; a run
+interrupted starts no further pair.
 
 A step's price (`price`) is what its session's start and each task cost:
 fitted on recorded runs, then measured on the store's sessions.
@@ -37,11 +40,12 @@ from axiomation.questions import Question, QueueSession, Validation
 from axiomation.questions.review_file import current_kind
 from axiomation.records import RecordError, RecordStore
 from axiomation.resolver import Attempt, torn
-from axiomation.runner import Runner, Stop
+from axiomation.runner import Runner, Stop, cut_off, interruption
 from axiomation.runner.hosts import (
     Host,
     HostAnswer,
     HostBreach,
+    HostInterrupted,
     HostOutOfCredit,
     HostOverBudget,
     HostUncounted,
@@ -92,6 +96,8 @@ class _Ended:
     answer: HostAnswer
     stopped: Stop | None = None
     detail: str = ""
+    #: whether its cost is what the host said, not the least it spent
+    whole: bool = True
 
 
 def run_queue(
@@ -108,7 +114,11 @@ def run_queue(
     hosts, what the store holds replayed and nothing asked."""
     store = runner.resolver.store
     started = runner.spent
-    with runner.resolver.claim(), contextlib.ExitStack() as current:
+    with (
+        runner.resolver.claim(),
+        interruption.held(),
+        contextlib.ExitStack() as current,
+    ):
         workflow = current.enter_context(queue.opened(run))
 
         def reopened() -> queue.Workflow:
@@ -171,6 +181,12 @@ def run_queue(
                 )
                 if position.task is None or not hosts or stopped is not None:
                     break
+                if interruption.interrupted():
+                    stopped, detail = (
+                        Stop.INTERRUPTED,
+                        interruption.stopped_words(queue=True),
+                    )
+                    break
                 # a task whose key joined copies answered apart is not served
                 # again: each run would pay for an answer no read takes
                 refusal = torn(store, position.key)
@@ -216,12 +232,18 @@ def run_queue(
                         }
                     )
                 failed = _servers_failed(sessions)
-                if failed:
-                    # no session runs, so none is paid for
+                if failed or interruption.interrupted():
+                    # no session runs, so none is paid for; an interrupt
+                    # reaches the servers being checked too, so it is the
+                    # stop's reason
                     for s in sessions:
                         (run.directory / f"{s.id}.json").unlink(missing_ok=True)
                     spool.path.unlink(missing_ok=True)
-                    stopped, detail = Stop.HOST, failed
+                    stopped, detail = (
+                        (Stop.INTERRUPTED, interruption.stopped_words(queue=True))
+                        if interruption.interrupted()
+                        else (Stop.HOST, failed)
+                    )
                     break
                 ended = _sessions(sessions, spool, timeout)
                 workflow = reopened()
@@ -249,11 +271,28 @@ def run_queue(
                     raise unfiled
                 spool.path.unlink(missing_ok=True)
                 stops = [e for e in ended.values() if e.stopped is not None]
+                cut = [e for e in stops if e.stopped is Stop.INTERRUPTED]
+                floors = sum(not e.whole for e in cut)
                 if stops:
                     first = next(
                         (e for e in stops if e.stopped is Stop.BREACH), stops[0]
                     )
                     stopped, detail = first.stopped, first.detail
+                    if stopped is Stop.INTERRUPTED:
+                        detail = interruption.stopped_words(
+                            len(cut), floors, queue=True
+                        )
+                    elif cut:
+                        detail += "; " + interruption.cut_words(
+                            len(cut), floors, queue=True
+                        )
+                elif interruption.interrupted():
+                    # the pair ended as the interrupt came: what it settled
+                    # is filed, and no pair follows
+                    stopped, detail = (
+                        Stop.INTERRUPTED,
+                        interruption.stopped_words(queue=True),
+                    )
                 elif n == 0:
                     stopped, detail = Stop.HOST, "the sessions settled no task"
         except queue.QueueError as error:
@@ -272,6 +311,17 @@ def run_queue(
             stopped,
             "; ".join(filter(None, [*notes, detail])),
         )
+
+
+def tasks_left(store: RecordStore, workflow: queue.Workflow) -> list[queue.Task]:
+    """The tasks a run of `workflow` would serve: those it draws that the
+    store's answers (a stopped run's among them) do not settle, up to an
+    answer its step no longer takes. What a dry run prices."""
+    working = queue.Working(workflow)
+    with contextlib.suppress(queue.QueueError):
+        queue.advance(workflow, working, queue.recorded(store, workflow))
+    done = working.ids
+    return [t for t in workflow.draw(working) if t.id not in done]
 
 
 def open_tasks(workflow: queue.Workflow, working: queue.Working) -> int:
@@ -310,6 +360,8 @@ def _sessions(
             return _Ended(refusal.answer, Stop.CREDIT, str(refusal))
         except HostUncounted as uncounted:
             return _Ended(uncounted.answer, Stop.UNCOUNTED, str(uncounted))
+        except HostInterrupted as cut:
+            return _Ended(cut.answer, Stop.INTERRUPTED, str(cut), cut.whole)
 
         except HostBreach as breach:
             for other in sessions:
@@ -473,13 +525,17 @@ def price(store: RecordStore, template: str, model: str, fitted: Fitted) -> Pric
     scaled so. A session is matched by the model its host reported, so a
     profile naming an alias is priced as fitted. A model `prices.toml`
     does not price is priced by the store's sessions alone, each task
-    bearing its share of their starts, and refused where it holds none."""
+    bearing its share of their starts, and refused where it holds none.
+    A session an interrupt cut off is left out (`runner.cut_off`), and
+    one that gave tasks at no cost: its host never said what it spent."""
     sessions = [
         a
         for a in store.answers()
         if a.kind == SESSION_KIND
         and current_kind(a.template.name) == template
         and a.model == model
+        and (a.cost > 0 or not a.tasks)
+        and not cut_off(a)
     ]
     tasks = sum(len(a.tasks) for a in sessions)
     spent = sum(a.cost for a in sessions)

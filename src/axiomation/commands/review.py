@@ -69,7 +69,7 @@ from axiomation.resolver import Resolver
 from axiomation.run_state import RunFile, made_from, text_of
 from axiomation.runner import LikeRuns, Runner, Stop, like_runs
 from axiomation.runner.hosts import estimate
-from axiomation.runner.queued import run_queue
+from axiomation.runner.queued import run_queue, tasks_left
 from axiomation.versions import State
 
 #: Scoped review sessions asked at once.
@@ -607,8 +607,19 @@ def _say_briefs(
     nothing reads, and each scope with nothing to ask; the
     estimate, its turns fitted (`_fitted`), and the expected cost: that
     times what like runs cost in the store, as the runner's check reads
-    it."""
+    it. A brief whose answer the store holds already (a run stopped after
+    it) is named and priced at $0: the command files it, asking nothing."""
     assert agent.rates is not None
+    answered = view.store.authoritative()
+    for found in briefs:
+        if found.question.key in answered:
+            say.line(
+                f"{session.value}: held, answer {found.question.key[:12]}: "
+                "filed at $0, nothing asked"
+            )
+    briefs = [f for f in briefs if f.question.key not in answered]
+    if not briefs:
+        return 0.0, 0.0
     floors = [
         estimate(
             f.question.prompt,
@@ -792,6 +803,7 @@ def _citation_queue(
         with queue.opened(run) as workflow:
             assert isinstance(workflow, citation_queue.Citing)
             found = workflow.found
+            left = tasks_left(store, workflow)
             if reviewed.prompts is not None:
                 # under the session's name, as every review session's files
                 asks.write_queue_prompts(
@@ -800,6 +812,9 @@ def _citation_queue(
     except citation_queue.CitationError as error:
         raise UsageError(str(error)) from None
     sites, settles = len(found.subjects), len(found.questions)
+    # a run stopped before settled some: only the rest are asked
+    sites_left = sum(1 for t in left if t.subject["site"])
+    settles_left = len(left) - sites_left
     kinds = [citation_queue.FINDER_KIND] if finder else []
     kinds.append(citation_queue.READER_KIND)
     each = []
@@ -808,7 +823,11 @@ def _citation_queue(
             price = citation_queue.price(store, kind, agent.model, finder is not None)
         except citation_queue.CitationError as error:
             raise UsageError(str(error)) from None
-        tasks = sites if kind == citation_queue.FINDER_KIND else sites + settles
+        tasks = (
+            sites_left
+            if kind == citation_queue.FINDER_KIND
+            else sites_left + settles_left
+        )
         each.append(
             (
                 price.cost(tasks, citation_queue.sessions(tasks)),
@@ -821,7 +840,9 @@ def _citation_queue(
         + (f", {settles} findings to settle" if settles else "")
         + f", {len(found.works) + len(found.unread)} cited works"
         + (f" ({len(found.unread)} unread)" if found.unread else "")
-        + f"; a queue, run {run.key[:12]}; expected ${cost:.2f}"
+        + f"; a queue, run {run.key[:12]}"
+        + _settled_words(sites + settles, len(left))
+        + f"; expected ${cost:.2f}"
     )
     first = review.first_reads(view, found)
     if first:
@@ -944,6 +965,7 @@ def _fieldresults_queue(
         with queue.opened(run) as workflow:
             assert isinstance(workflow, fq.Fielding)
             results = len(workflow.listed)
+            left = len(tasks_left(store, workflow))
             if reviewed.prompts is not None and results:
                 asks.write_queue_prompts(
                     workflow, reviewed.prompts / Session.FIELDRESULTS
@@ -955,7 +977,7 @@ def _fieldresults_queue(
             price = fq.price(store, kind, agent.model)
             each.append(
                 (
-                    price.cost(results, fq.sessions(results)),
+                    price.cost(left, fq.sessions(left)),
                     seating.priced_words(kind, agent.model, price, "a result"),
                 )
             )
@@ -963,8 +985,8 @@ def _fieldresults_queue(
         raise UsageError(str(error)) from None
     cost = sum(c for c, _ in each)
     say.line(
-        f"  its queue: {results} results to source; run {run.key[:12]}; "
-        f"expected ${cost:.2f}"
+        f"  its queue: {results} results to source; run {run.key[:12]}"
+        f"{_settled_words(results, left)}; expected ${cost:.2f}"
     )
     for _, line in each:
         say.line(f"    {line}")
@@ -1038,19 +1060,22 @@ def _methods_queue(
         with queue.opened(run) as workflow:
             assert isinstance(workflow, methods_queue.Methods)
             found = workflow.found
+            left = len(tasks_left(store, workflow))
             if reviewed.prompts is not None:
                 asks.write_queue_prompts(workflow, reviewed.prompts / Session.METHODS)
         price = methods_queue.price(store, seated.model)
     except methods_queue.MethodsError as error:
         raise UsageError(str(error)) from None
     pairs, settles = len(found.subjects), len(found.questions)
-    cost = price.cost(pairs + settles)
+    cost = price.cost(left)
     say.line(
         f"methods at state {kept.id}: {pairs} "
         + ("pair" if pairs == 1 else "pairs")
         + " of a block and a script"
         + (f", {settles} findings to settle" if settles else "")
-        + f"; a queue, run {run.key[:12]}; expected ${cost:.2f}"
+        + f"; a queue, run {run.key[:12]}"
+        + _settled_words(pairs + settles, left)
+        + f"; expected ${cost:.2f}"
     )
     words = seating.priced_words(
         methods_queue.READER_KIND, seated.model, price, "a pair"
@@ -1064,6 +1089,12 @@ def _methods_queue(
     return _review_queue_asked(
         reviewed, profile, store, seated, budget, round_id, run, say
     )
+
+
+def _settled_words(tasks: int, left: int) -> str:
+    """What a queue's dry run says of the tasks a run stopped before
+    settled: nothing where none."""
+    return f"; {tasks - left} settled by a run before" if left < tasks else ""
 
 
 def _review_queue_asked(

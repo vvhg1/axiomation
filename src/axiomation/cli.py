@@ -58,6 +58,8 @@ from __future__ import annotations
 import argparse
 import atexit
 import gc
+import os
+import signal
 import sys
 import webbrowser
 from collections.abc import Sequence
@@ -112,6 +114,7 @@ from axiomation.records import (
     RecordError,
 )
 from axiomation.resolver import StoreBusy
+from axiomation.runner import interruption
 from axiomation.runner.opencode import HostSetupError
 from axiomation.settings import (
     SettingsError,
@@ -361,6 +364,36 @@ def _read(arguments: argparse.Namespace) -> tuple[str | bytes, Path | None]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """The command `argv` names. A Ctrl-C while a run asks is that run's
+    stop (`runner.interruption`); a second one, or one where no run asks,
+    ends the command in one line, never a traceback. Run as its own
+    process, a command a Ctrl-C ended then ends by SIGINT, its report
+    written, so a calling shell stops too."""
+    try:
+        code = _command(argv)
+    except KeyboardInterrupt:
+        given = list(sys.argv[1:] if argv is None else argv)
+        print(
+            f"{' '.join(['axiomation', *given[:1]])}: interrupted; what was "
+            "filed is kept: the same command resumes",
+            file=sys.stderr,
+        )
+        code = Exit.INTERRUPTED
+    if argv is None and (code == Exit.INTERRUPTED or interruption.interrupted()):
+        _end_by_interrupt()
+    return code
+
+
+def _end_by_interrupt() -> None:
+    """End this process by SIGINT, its output written: the shell sees the
+    interrupt (status 130), not an ordinary exit."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    os.kill(os.getpid(), signal.SIGINT)
+
+
+def _command(argv: Sequence[str] | None) -> int:
     if argv is None:
         _as_its_own_process()
     given = list(sys.argv[1:] if argv is None else argv)

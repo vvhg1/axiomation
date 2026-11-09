@@ -504,6 +504,23 @@ cleanly and resumably, leaving every finished answer recorded:
 | `breach` | the model touched a path outside its directory: the run ends at once |
 | `uncounted` | the host could not say what an attempt cost |
 | `queue` | a queue run's recorded answer its step no longer takes: what was filed stays filed, and an answer not yet filed is kept |
+| `interrupted` | a person pressed Ctrl-C while the run asked: each session in flight is ended with its process group (its tool servers too); a file session records an attempt that answered nothing, a queue session files the tasks it settled and its session record, each with what it spent; the run starts nothing more, and no later run in the process asks anything (`runner/interruption.py`) |
+
+A Ctrl-C while a run asks raises nothing: each host's wait sees it
+within a fraction of a second and ends its session, and a session that
+answered before then is filed. Claude Code says what a session cost
+only at its end (OpenCode's record says it at once), so a session it
+cut off is recorded, and counted against the budget, at the least it
+spent: its turns' counts priced at `prices.toml` (a turn's stream
+counts less output than the result). No measure of what like runs
+cost reads a record an interrupt cut off (`runner.cut_off`). A dry run
+prices only what the command would ask: a brief whose answer the store
+holds at $0, and a queue on the tasks its runs left (`queued.tasks_left`).
+A second Ctrl-C, or one between a command's runs,
+raises in the command, which ends in one line once the sessions being
+cut off have ended. Run as its own process, a command any Ctrl-C ended
+then ends by SIGINT, its report written, so a calling shell stops
+(status 130).
 
 Before each attempt the runner reserves its estimated cost against the
 budget and stops if it could pass it. The estimate is one attempt: the
