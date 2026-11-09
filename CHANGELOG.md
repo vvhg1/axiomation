@@ -6,8 +6,9 @@ is a tag on `main`.
 ## 0.1.1 (2026-11-08)
 
 Fixes to the review queues, the cited works' search and the README's
-banner, a switch to read the cited works from their PDFs, and lines that
-leave from a part of their block.
+banner, a switch to read the cited works from their PDFs, lines that
+leave from a part of their block, and fewer findings about a result's
+worth that the paper itself answers.
 
 - **A review queue resumes.** A `citationcheck`, `methods` or
   `fieldresults` session that settled a finding could not be resumed:
@@ -43,6 +44,16 @@ leave from a part of their block.
   (`--no-place` skips it). A profile of your own whose edges agent is not
   on Claude Code must set `place_lines_after_edges = false`. A store
   holding such a line is not read by 0.1.0.
+- **A result's worth is held to what the paper claims.** The findings
+  session filed results as "a standard fact, so it adds nothing"
+  although the paper named them standard itself, or claimed no new
+  result of that kind, and filed definitions as saying nothing. It files
+  no worth finding on a definition or a sentence that restates one, nor
+  on a result the paper says follows from another of its own. Whether a
+  result is a standard fact is now the `contribution` session's
+  question, held to the paper's own statement of its contribution and
+  shown in a work it read. That session is not asked by default: ask it
+  with `--session contribution` (or `--session field`).
 
 ## 0.1.0 (2026-11-07)
 

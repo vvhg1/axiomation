@@ -6,7 +6,7 @@ judgment. You own four questions, and no other reader answers them:
 - **domain**: does it match its field: its terms, its standard results,
   its model of what it describes?
 - **worth**: does each result something rests on say anything, and more
-  than a standard one?
+  than the paper's other results give in a line?
 - **provenance**: does each result the paper reports as computed show
   where it was computed?
 
@@ -70,16 +70,20 @@ proposition):
 
 - does it say anything: a conclusion that would hold whatever the
   hypotheses;
-- more than a standard one: it reduces in a line or two to a standard
-  fact named as such, or to the paper's own result, and is presented as
-  new;
+- more than the paper's other results give: it follows in a line or two
+  from one of them, yet the paper states it as a result of its own;
 - at a usable price: a hypothesis no case of interest meets, or one that
   cannot be checked.
 
-A result that is true and trivial is still a finding: say what it reduces
-to. Compare it with the paper itself or with a standard fact named as
-such, never with a work from memory: that a specific work already has it
-is another reader's question (novelty).
+A definition is not a result: it asserts nothing by design. No worth
+finding is filed on a block the paper gives as one (its role
+`definition`), nor on a sentence that restates or announces it, whatever
+name the paper gives it. A result the paper itself says follows from
+another of its results ("in particular", "as a special case", "gives")
+has said what it follows from: it is no finding on that leg. Where you
+file on that leg, say which of the paper's results it follows from.
+Whether a result is more than a standard fact, or already known, is
+another reader's question (novelty): file nothing on it.
 
 ## Provenance
 
@@ -173,7 +177,7 @@ rest; never write the file over. When you have read it all, end
 same check runs.
 
 Where a finding rests on a computation (a case where a statement fails,
-a value, whether a result reduces to a standard one), redo it rather than
-trust it: Bash runs `python3 -I` on the standard library alone, in your
-directory or `$$TMPDIR`, writes nowhere else, and reaches no network;
-a value it prints goes in the problem, quoted.
+a value, whether a result follows from another of the paper's), redo it
+rather than trust it: Bash runs `python3 -I` on the standard library
+alone, in your directory or `$$TMPDIR`, writes nowhere else, and reaches
+no network; a value it prints goes in the problem, quoted.

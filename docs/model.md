@@ -841,8 +841,8 @@ kind replaces that line ([the architecture](architecture.md) § 9).
 | `computed` | does the script compute what the block says, and is the printed value its output? As a finding's aspect also: does a result the paper reports as computed show the script that computes it? | a block and a code file it uses | the block, its uses edge to the file, the file's content |
 | `well-posed` | is the definition or statement well-posed? | a finding's aspect only | its uses edges and their targets |
 | `presentation` | can it be read as written? | a finding's aspect only | its anchors' text |
-| `significance` | does the result say anything, and more than a standard one? | a finding's aspect only | its anchors' text |
-| `novelty` | is the result known? | a finding's aspect only | its anchors' text |
+| `significance` | does the result say anything, and more than the paper's other results give in a line? | a finding's aspect only | its anchors' text |
+| `novelty` | is the result known: stated in a work, or a standard fact it reduces to in a line or two? | a finding's aspect only | its anchors' text |
 | `literature` | is the paper placed in its literature: the results of its field it uses, and the work beside it, cited? | a finding's aspect only | its anchors' text |
 
 "Does the reliance hold" is no aspect: its graph half is the uses edge
