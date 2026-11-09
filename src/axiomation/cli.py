@@ -42,6 +42,8 @@
   `circles DIR [--ask]`: its circles of what claims rest on, and an
   agent's question naming their lines' ends; `support DIR [--ask]`: its
   claims standing unsupported, and an agent's search for their support;
+  `place DIR [--ask]`: its blocks a line enters at a part whose own lines
+  name no part they leave from, and an agent's placing of those lines;
   `view DIR`: the viewer served on 127.0.0.1, read-only.
 
 `review-cut`, `build`, `update`, `sheet`, `edit`, `change` and the reads
@@ -68,6 +70,7 @@ from axiomation import (
     edits,
     evidence,
     judgments,
+    placing,
     queries,
     rereads,
     review,
@@ -155,6 +158,7 @@ KEPT_COMMANDS = (
     "reread",
     "circles",
     "support",
+    "place",
     "run",
     "confirm",
     "members",
@@ -548,6 +552,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "circles":
             _write(asks.circles_of(asks.request(arguments), Say()).text, None)
             return 0
+        if arguments.command == "place":
+            step = asks.place_of(asks.request(arguments), Say())
+            _write(step.text, None)
+            return Exit.BREACH if step.breached else 0
         if arguments.command == "support":
             step = asks.support(asks.request(arguments), Say())
             _write(step.text, None)
@@ -570,6 +578,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         edits.EditError,
         rereads.RereadError,
         circles.CircleError,
+        placing.PlaceError,
         support_search.SearchError,
     ) as error:
         print(f"axiomation {arguments.command}: {error}", file=sys.stderr)

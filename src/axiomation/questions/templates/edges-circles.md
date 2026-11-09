@@ -36,7 +36,10 @@ this line's source rely on, by the text? Then answer once:
   - `narrow`: a line by its number, with `target_end`, the labels of the
     parts or the handles of the claims its target end relies on (`→ uses
     T [<label>]`, `→ about T [<claim's handle>]`), or `own_end`, an about
-    line's own block's claims it restates for, or `["-"]` for none;
+    line's own block's claims it restates for, or `["-"]` for none, or,
+    where its block's lines name the parts they leave from already, a
+    uses line's parts of its own block it leaves from (`→ uses [<label>]
+    T`);
   - `parts`: a part a narrowed end names that its block lacks: the block,
     a label, the block's own words holding the definition or hypothesis
     (never a claim), and its role, `definition`, `assumption` or

@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from axiomation.cutter.model import Block, Cut
-from axiomation.exchange import named_claims_key
+from axiomation.exchange import named_ends_key
 from axiomation.records import EdgeRecords
 
 
@@ -211,25 +211,32 @@ def _groups(before: Cut, after: Cut) -> list[GraphChange]:
 
 
 def _edges(before: EdgeRecords, after: EdgeRecords) -> list[GraphChange]:
-    """By what each edge says: its source, kind and target; its parts by
-    their entries' words and roles, never their labels, which each answer
-    picks; the claims it names, by their words; its where-used,
+    """By what each edge says: its source, kind and target; its parts, and
+    those of its source it leaves from, by their entries' words and roles,
+    never their labels, which each answer picks; the claims it names, by
+    their words; its where-used,
     generalizes and assumed flags, its partial and its mark. Each record counts, so a
     duplicate dropped on one side is a retraction."""
 
     def parts(records: EdgeRecords):
         entries = {(e.block, e.label): e for e in records.entries}
 
-        def of(edge) -> tuple[object, ...]:
+        def named(block: str, labels) -> tuple[object, ...]:
             found = []
-            for label in edge.parts:
-                entry = entries.get((edge.target.name, label))
+            for label in labels:
+                entry = entries.get((block, label))
                 found.append(
                     (label,)
                     if entry is None
                     else (" ".join(entry.words.split()), entry.role, entry.standard)
                 )
             return tuple(sorted(found, key=repr))
+
+        def of(edge) -> tuple[object, ...]:
+            return (
+                named(edge.target.name, edge.parts),
+                named(edge.source, edge.source_parts),
+            )
 
         return of
 
@@ -242,7 +249,7 @@ def _edges(before: EdgeRecords, after: EdgeRecords) -> list[GraphChange]:
         return (
             *target(e),
             of(e),
-            named_claims_key(e.claims, e.source_claims, e.restates_none),
+            named_ends_key(e.claims, e.source_claims, e.restates_none),
             e.where_used,
             e.generalizes,
             e.assumed,

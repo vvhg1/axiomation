@@ -1,8 +1,9 @@
 """What an agent is asked after an edit, as a queue: the reread of the
-owners of open stale marks, the search for a claim's support, the
-question on a circle of what claims rest on; each as its own command
-(`reread --ask`, `support`, `circles`) and as the end of a build or an
-update, and each priced for a dry run."""
+owners of open stale marks, the search for a claim's support, the placing
+of a block's lines at its parts, the question on a circle of what claims
+rest on; each as its own command (`reread --ask`, `support`, `place`,
+`circles`) and as the end of a build or an update, and each priced for a
+dry run."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from axiomation import (
     check,
     circles,
     edits,
+    placing,
     queries,
     queue,
     rereads,
@@ -39,6 +41,7 @@ from axiomation.commands.seating import Asking, QueueSeats
 from axiomation.driver import ReviewSettings
 from axiomation.profiles import Agent, Profile
 from axiomation.questions import Stage
+from axiomation.questions import edge_sheet as es
 from axiomation.records import RecordStore
 from axiomation.runner import Runner, Stop
 from axiomation.runner import given as queue_given
@@ -89,6 +92,16 @@ class Support:
 
 
 @dataclass(frozen=True, kw_only=True)
+class Place:
+    paper: Paper
+    block: tuple[str, ...] = ()
+    ask: bool = False
+    dry_run: bool = False
+    prompts: Path | None = None
+    asking: Asking = field(default_factory=Asking)
+
+
+@dataclass(frozen=True, kw_only=True)
 class Circles:
     paper: Paper
     circle: tuple[str, ...] = ()
@@ -100,10 +113,10 @@ class Circles:
     asking: Asking = field(default_factory=Asking)
 
 
-def request(arguments: argparse.Namespace) -> Reread | Support | Circles:
-    """The ask a command's parsed arguments give: `reread --ask`, `support`
-    or `circles`."""
-    kind = {"reread": Reread, "support": Support, "circles": Circles}
+def request(arguments: argparse.Namespace) -> Reread | Support | Place | Circles:
+    """The ask a command's parsed arguments give: `reread --ask`, `support`,
+    `place` or `circles`."""
+    kind = {"reread": Reread, "support": Support, "place": Place, "circles": Circles}
     return requested(
         kind[arguments.command],
         arguments,
@@ -441,7 +454,130 @@ def circles_of(found: Circles, say: Say) -> Step:
     )
 
 
-def _refuse_dry_without_ask(found: Support | Circles) -> None:
+def place_of(found: Place, say: Say) -> Step:
+    """`place PAPER [BLOCK…]`: the blocks to place at a kept state (a line
+    enters each at a part, and its own lines name no part they leave
+    from), each with the word that reads it whole, where one is filed.
+    `--ask`: the profile's edges agent takes each no word reads whole (or
+    those named) as a task, one at a time (`placing`), and names the parts
+    each line leaves from and each part writes, or reads it whole (filed);
+    once every block is settled, the lines placed are given as its edges
+    edit; then what it did to the gates. `--dry-run`: priced by what a task
+    costs, nothing asked; `--prompts DIR`: the brief and the tasks under
+    DIR. With the text, whether it ended whole: False only where blocks
+    are still open."""
+    store = kept_store(found.paper)
+    # what the queue settles is kept on top of the state it reads
+    kept = (kept_on if found.ask else chosen)(found.paper, store)
+    view = queries.View(store, kept)
+    if not found.ask:
+        _refuse_dry_without_ask(found)
+        every = placing.listed(view)
+        if found.block:
+            named = set()
+            for ref in found.block:
+                try:
+                    named.add(view.handle(view.resolve(ref)))
+                except queries.QueryError as error:
+                    raise UsageError(f"{ref}: {error}") from None
+            every = [a for a in every if a.handle in named]
+        whole = placing.read_whole(store)
+        lines = [
+            f"{len(every)} blocks to place at state {kept.id}, "
+            f"{sum(a.key not in whole for a in every)} not read whole"
+        ]
+        for a in every:
+            read = whole.get(a.key)
+            entered = sorted(
+                {
+                    p
+                    for x in a.entering
+                    if (m := es.EDGE.match(x.text)) is not None
+                    for p in (m.group("parts") or "").split(", ")
+                    if p
+                }
+            )
+            lines.append(
+                f"  {a.handle}: entered at [{', '.join(entered)}], {len(a.lines)} "
+                f"lines, {len(a.qualifiers)} qualifiers  "
+                + (
+                    "not read"
+                    if read is None
+                    else f"read whole by {read.author} at "
+                    f"{read.record.state[:8]}: {read.record.reason}"
+                )
+            )
+        return Step("\n".join(lines))
+    given, defaulted = seating.default_profile(found.asking)
+    profile = seating.profile_of(given)
+    dry = found.dry_run
+    asking = not dry and given.host != "none"
+    if asking:
+        given = seating.take_budget(
+            given,
+            found.paper.directory,
+            found.paper.store,
+            "place --ask",
+            seating.budget_needed(given, "place --ask", defaulted),
+            say,
+        )
+    agents = seating.seated(
+        profile,
+        ReviewSettings(stages=(Stage.EDGES,), given_cut=True),
+        priced=True,
+        hosted=asking,
+    )
+    seated = seating.edges_seated(agents[Stage.EDGES], asking or dry, "the placing")
+    run = place_run(store, kept, profile, given.profiles, seated, found.block)
+    try:
+        with queue.opened(run) as placed:
+            assert isinstance(placed, placing.Placing)
+            asked = placed.asked
+            if found.prompts is not None and asked:
+                write_queue_prompts(placed, found.prompts)
+    except placing.PlaceError as error:
+        raise UsageError(str(error)) from None
+    if not asked:
+        return Step(f"state {kept.id} holds no block to place")
+    lines = [
+        f"place --ask at state {kept.id}: {len(asked)} blocks, "
+        f"{sum(len(a.lines) for a in asked)} lines; run {run.key[:12]}"
+    ]
+    if dry:
+        try:
+            price = placing.price(store, seated.model)
+        except placing.PlaceError as error:
+            raise UsageError(str(error)) from None
+        cost, priced = _queue_priced(len(asked), "a block", placing.KIND, seated, price)
+        lines[0] = "dry run, nothing asked or recorded: " + lines[0]
+        lines += [
+            *priced,
+            *_prompts_line(found.prompts, "brief and tasks"),
+            *(f"  {a.handle}: {len(a.lines)} lines" for a in asked),
+        ]
+        return Step("\n".join(lines), estimate=cost)
+    before = check.verdict(view, found.paper.directory)
+    hosts = seating.queue_hosts(seated) if asking else []
+    runner = (
+        seating.queue_runner(given, profile, store, seated, hosts) if asking else None
+    )
+    try:
+        done = placing.ask(run, seated.model, runner, hosts, seated.autocompact_tokens)
+    except (edits.EditError, placing.PlaceError, queue.QueueError) as error:
+        raise UsageError(str(error)) from None
+    out = done.outcome
+    breached = _queue_report(out.report, lines)
+    if breached is not None:
+        return breached
+    for said in done.said:
+        verdict = "whole" if said.whole else "placed"
+        lines.append(f"{verdict}: {said.block.handle} — {said.why}")
+    return _queue_end(
+        found.paper.directory, store, kept, view, before, out, lines, "blocks", asking
+    )
+
+
+def _refuse_dry_without_ask(found: Support | Place | Circles) -> None:
     """`--dry-run` and `--prompts` without `--ask`: nothing is asked, so
     nothing is priced or served."""
     for flag, given in (("--dry-run", found.dry_run), ("--prompts", found.prompts)):
@@ -688,6 +824,62 @@ def circles_after(
     return counts, stopped
 
 
+def place_after(
+    store: RecordStore,
+    kept: State,
+    profile: Profile,
+    profiles: str | Path | None,
+    runner: Runner | None,
+    agent: Agent,
+) -> tuple[dict[str, Any], Stop | None] | None:
+    """The placing a build or an update ends with (`docs/model.md` § 9): a
+    queue of the edges agent on the blocks of the state it kept to place
+    that no word reads whole, from what is left of the budget
+    (`placing.ask`; `runner` None: only what the store holds is replayed).
+    Its counts, and why its run stopped; None where no block is asked."""
+    try:
+        seated = seating.edges_seated(agent, runner is not None, "the placing")
+        run = place_run(store, kept, profile, profiles, seated)
+        with queue.opened(run) as placed:
+            assert isinstance(placed, placing.Placing)
+            asked = placed.asked
+        if not asked:
+            return None
+        hosts = seating.queue_hosts(seated) if runner is not None else []
+        done = placing.ask(
+            run,
+            seated.model,
+            runner if hosts else None,
+            hosts,
+            seated.autocompact_tokens,
+        )
+    except (
+        edits.EditError,
+        placing.PlaceError,
+        queue.QueueError,
+        UsageError,
+    ) as error:
+        # the run's state is kept whatever its placing meets
+        return {"refused": [str(error)]}, None
+    out = done.outcome
+    stopped = None if out.report is None else out.report.stopped
+    counts: dict[str, Any] = {
+        "blocks": len(asked),
+        "lines": sum(len(a.lines) for a in asked),
+        "spent": round(0.0 if out.report is None else out.report.spent, 6),
+        **({"stopped": stopped.value} if stopped is not None else {}),
+        "placed": sum(not s.whole for s in done.said),
+        "whole": sum(s.whole for s in done.said),
+    }
+    if not out.complete:
+        return counts | {"unanswered": out.open}, stopped
+    if out.problems:
+        counts["refused"] = list(out.problems)
+    elif out.state is not None:
+        counts["state"] = out.state.id
+    return counts, stopped
+
+
 def support_after(
     store: RecordStore,
     kept: State,
@@ -789,6 +981,29 @@ def reread_run(
     )
 
 
+def place_run(
+    store: RecordStore,
+    kept: State,
+    profile: Profile,
+    profiles: str | Path | None,
+    seated: QueueSeats,
+    named: Sequence[str] = (),
+) -> queue.Run:
+    """The placing's queue run on `kept`: the blocks named (none: each to
+    place that no word reads whole), its kept state opened under the
+    profile, its edit `seated.model`'s."""
+    return queue.Run(
+        store,
+        kept,
+        placing.FACTORY,
+        {
+            **seating.run_profile(profile, profiles),
+            "blocks": list(named),
+            "model": seated.model,
+        },
+    )
+
+
 def circles_run(
     store: RecordStore,
     kept: State,
@@ -855,6 +1070,34 @@ def support_priced(
     return {"support_if_it_fires": round(seating.search_cost(store, seated, claims), 4)}
 
 
+def place_priced(
+    store: RecordStore, started: State | None, seated: QueueSeats | None
+) -> dict[str, Any]:
+    """An update dry run's `place_if_it_fires`, where the update ends with
+    the placing: its price (`placing.price`) on each block to place at the
+    state it starts from that no word reads whole, one at least. None,
+    with `place_not_priced`, where it starts from no state."""
+    if seated is None:
+        return {}
+    if started is None:
+        return {
+            "place_if_it_fires": None,
+            "place_not_priced": "the update starts from no kept state",
+        }
+    whole = placing.read_whole(store)
+    try:
+        listed = placing.listed(queries.View(store, started))
+    except edits.EditError as error:
+        # a state whose edges do not read back takes no edit, nor a placing
+        return {"place_if_it_fires": None, "place_not_priced": str(error)}
+    asked = [a for a in listed if a.key not in whole]
+    try:
+        price = placing.price(store, seated.model)
+    except placing.PlaceError as error:
+        raise UsageError(str(error)) from None
+    return {"place_if_it_fires": round(price.cost(max(len(asked), 1)), 4)}
+
+
 def circles_priced(
     store: RecordStore, started: State | None, seated: QueueSeats | None
 ) -> dict[str, Any]:
@@ -915,6 +1158,34 @@ def _circles_arguments(commands: Any) -> None:
     seating.asking_arguments(found, "the circles' session", "the question")
 
 
+def _place_arguments(commands: Any) -> None:
+    found = commands.add_parser(
+        "place",
+        help="the blocks a line enters at a part whose own lines name no part they "
+        "leave from, at a kept state; with --ask, an agent names the part each "
+        "line leaves from and the parts each part writes",
+    )
+    kept_arguments(found)
+    found.add_argument(
+        "block",
+        nargs="*",
+        help="these blocks (a handle, a node id or a handle's prefix); default: "
+        "every block to place, with --ask every one nobody has read whole",
+    )
+    found.add_argument(
+        "--ask",
+        action="store_true",
+        help="ask the profile's edges agent where each line of each block leaves "
+        "from: the lines it places are given as its edit of the edges, a new "
+        "state; a block it reads whole is filed with its reason",
+    )
+    found.add_argument(
+        "--dry-run", action="store_true", help=f"with --ask: {DRY_RUN_HELP}"
+    )
+    prompts_argument(found, with_ask=True)
+    seating.asking_arguments(found, "the placing's session", "the placing")
+
+
 def _support_arguments(commands: Any) -> None:
     support = commands.add_parser(
         "support",
@@ -950,5 +1221,6 @@ def _support_arguments(commands: Any) -> None:
 #: filing's (`commands.filings`).
 ARGUMENTS: dict[str, Callable[[Any], None]] = {
     "circles": _circles_arguments,
+    "place": _place_arguments,
     "support": _support_arguments,
 }

@@ -232,7 +232,7 @@ def dollars(amount: float) -> str:
 
 
 #: The steps a build or an update may end with, in the order they run.
-FOLLOW_UPS = ("reread", "support", "circles")
+FOLLOW_UPS = ("reread", "support", "place", "circles")
 
 
 def summary_lines(summary: Mapping[str, Any]) -> str:

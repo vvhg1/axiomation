@@ -57,6 +57,7 @@ questions a build or an edit requires, in what order.
 | `rereads.py` | a reread asked of an agent, as a queue: a task an owner of an open mark, its lines read against what changed and answered standing (a reread filed) or changed; the lines changed given as one edges edit; `reread --ask` runs it, and an update at its end |
 | `update_queue.py` | an update's one session, asked as a queue on Claude Code: a task each block the edit changed or added, each block its Δ lines move by rule, each owner it reopened, each block that may rely on a part an answer added; served on the carried sheet, the paper beside as `paper.md`; the sheet filed as the session's answer |
 | `circles.py` | a circle asked of an agent, as a queue: a task a circle, its ends narrowed by code from the typed answer or the circle read real (filed); the lines narrowed given as one edges edit; `circles --ask` runs it, and a build or an update at its end |
+| `placing.py` | a block's lines placed at its parts by an agent, as a queue: a task a block a line enters at a part whose own lines name no part they leave from, the parts each line leaves from and each part writes written by code from the typed answer, or the block read whole (filed); the lines placed given as one edges edit; `place --ask` runs it, and a build or an update at its end |
 | `support_search.py` | a claim's support searched by agents, as a queue: a task a claim standing unsupported, the worker's answer and the settling step's confirm or own answer; the lines settled given as one edges edit, the claims read unargued filed as searches; `support --ask` runs it, and a build or an update at its end |
 | `evidence.py` | the evidence contract: a cited page's and a script run's stamp, the read statuses, the provider protocol |
 | `settings.py`, `computations.py` | a paper's settings (`axiomation.toml`), and the paper a directory is in, found by walking up; its code files, found, keyed and run |
@@ -288,7 +289,7 @@ working sheet given as **one edges edit** (`runner/given.py`), the last
 step's model's, in the run's session: a new kept state. Given before,
 its state is found, not given again, so a replay reaches the same
 state; a run with tasks open, or one a breach stopped, gives nothing.
-The support search, the reread and the circles end so; the reread's
+The support search, the reread, the placing and the circles end so; the reread's
 edit is recorded as shown the stale marks, the others' as shown none.
 
 An update's edges queue (`update_queue.py`) ends otherwise: it answers
@@ -317,11 +318,12 @@ asked; and, once the state is kept, `open_marks`, `open_descriptions`
 `lost` lists each edge onto a deleted block that no line replaced;
 `corrections_lost` and `groups_lost` the cut corrections and groups that
 did not carry, with their words and why. The steps it ends with add `reread`,
-`support` and `circles`, each counting what it asked, settled and spent.
-Its dry run prices those steps where they would fire
-(with `--json`: `reread_if_it_fires`, `support_if_it_fires`, `circles_if_it_fires`,
-each on what the state it starts from holds, the reread and the circles
-one task at least) and names the like runs its expected cost is fitted
+`support`, `place` and `circles`, each counting what it asked, settled
+and spent. Its dry run prices those steps where they would fire (with
+`--json`: `reread_if_it_fires`, `support_if_it_fires`,
+`place_if_it_fires`, `circles_if_it_fires`, each on what the state it
+starts from holds, the reread, the placing and the circles one task at
+least) and names the like runs its expected cost is fitted
 on (`expected_by`). A
 profile whose edges agent is on OpenCode updates per stage: its
 `per_stage_update_above_recut_blocks` stays unset.
@@ -461,8 +463,8 @@ step's share of what is left. A step that searches the web
 (`QueueSession.web`, the fieldresults queue's finder and reader) is given
 WebSearch beside its server's tools, allowed in its settings and in its
 confinement check; never a web fetch. Under OpenCode a queue session is refused,
-and a profile whose build or update ends with the search, the reread or
-the circles on an OpenCode agent is refused when it is read.
+and a profile whose build or update ends with the search, the reread, the
+placing or the circles on an OpenCode agent is refused when it is read.
 The support search's steps are a profile's table (`support_search`):
 its worker and its settling step, each an agent on Claude Code with its
 `budget_share`, and the bound its sessions compact at
@@ -470,9 +472,10 @@ its worker and its settling step, each an agent on Claude Code with its
 the edges' agent. Its dry run prices each step as one session's start
 and its tasks: the start fitted on recorded runs and scaled to the
 model, a task measured on the store's sessions of that step on that
-model where it holds any, else fitted (`runner.queued.price`). The reread and the circles are one step on the
-edges' agent, compacted at the same bound, priced so, a task an owner or
-a circle. A queue run is named by what it asks and by whom: its model
+model where it holds any, else fitted (`runner.queued.price`). The
+reread, the placing and the circles are one step on the edges' agent,
+compacted at the same bound, priced so, a task an owner, a block or a
+circle. A queue run is named by what it asks and by whom: its model
 and the profiles file it is read from, so a run resumed or replayed
 under another `--model`, or from a copy whose profiles file lies
 elsewhere, is another run. The citationcheck session's seats are its review table
@@ -532,7 +535,7 @@ given no `--budget` takes the budget default, the paper's, the
 workspace's or the person's `run_dollars_max` (§ 8), and says so; its runner then asks nothing of a step expected to cost
 more than is left, one attempt a question, and stops (`budget`). `sync`
 chains `update`, where the paper's text is ahead of the latest state,
-`reread --ask`, `support --ask` and `circles --ask` as the profile ends
+`reread --ask`, `support --ask`, `place --ask` and `circles --ask` as the profile ends
 an update with them, and `review`, within one budget, each its own command's
 run, and stops at the first that does not end whole. An update's dry run prices each edges session of an update per stage at two attempts
 (`attempts_priced`, one attempt's `attempt_estimate` beside it): its gate
@@ -805,6 +808,7 @@ ids from them, exactly as given:
 | `rereads` | a person's or an agent's rereads of stale-marked owners |
 | `circles` | a person's or an agent's word that a circle of what claims rest on is real, by its key |
 | `searches` | the support search's word that it searched the paper for a claim's support and found none |
+| `whole-blocks` | a person's or an agent's word that a block a line enters at a part is read whole, by its key |
 | `suggestions` | suggestions: a work the paper may want to cite at a place |
 | `suggestion-answers` | the author's answers to suggestions, taken or declined |
 | `contribution-checks` | the contribution session's checks: a contribution read against the literature, a `positioning` claim's reading |
@@ -947,7 +951,7 @@ One JSON document per paper state, `"format": "axiomation-exchange"`,
 | `groups` | id, kind, blocks, role, the result it names and how |
 | `candidates` | the marked edge candidates |
 | `entries` | the parts edges name: id, block, anchor, span, role, and `standard` where set |
-| `edges` | id, source, evidence excerpts with spans, target (with `claims`, the words of the target's standings it names, only where set), kind, mark, `where_used`, `generalizes` (only where set), `partial` (`sketch` or `analogy`, only where set), `source_claims` (an about edge's restating standings' words, or those an `assumed` edge is a hypothesis for, only where set), `assumed` (a uses edge whose source's statement takes its conjectured target as a hypothesis, only where set), provenance (`by`, model, question, detail), note |
+| `edges` | id, source, evidence excerpts with spans, target (with `claims`, the words of the target's standings it names, only where set), kind, mark, `where_used`, `generalizes` (only where set), `partial` (`sketch` or `analogy`, only where set), `source_claims` (an about edge's restating standings' words, or those an `assumed` edge is a hypothesis for, only where set), `assumed` (a uses edge whose source's statement takes its conjectured target as a hypothesis, only where set), `source_entries` (the entries of its source block a uses edge leaves from, ids as the target's `entries`, only where set), provenance (`by`, model, question, detail), note |
 | `self`, `standings`, `ambient` | self marks (with `partial` and `claims`, the standings it supports, only where set), standings (block, claim words and span, status, `declared` (`omitted` or `promised`, only where set), `handle` (the sheet's, where its ⊢ line defines one or its block holds several claims; shown, never an identity)), the frame's blocks; each self mark and standing with its provenance |
 | `handles` | each block's and group's handle on the sheet its edges answer was written on, which the export's own records name it by: its node's handle (`docs/model.md` § 7) |
 | `edges_answer` | the answer whose sheet is the edge half |
@@ -1820,8 +1824,10 @@ so its checks judge all it writes.
 ### Judgments (the model's § 8)
 
 **A review's lines.** The edges hold one edge per source, kind and
-target, so a review's line onto a target its block has a line of the
-same kind onto replaces that line: a justifies line, J's lines onto T
+target (but justifies lines naming disjoint claims, and uses lines
+leaving from disjoint parts of their block, [the model](model.md) § 3),
+so a review's line onto a target its block has a line of the same kind
+onto replaces that line: a justifies line, J's lines onto T
 covering a claim it covers (it may name fewer, taking a claim out of J's
 cover); a self mark, the mark with the same quote; an about line, which
 its brief asks to name each claim the old one named; a uses line, which
@@ -1840,7 +1846,11 @@ same edge's later changes are further causes. A line's `sketch` or
 `analogy` ([the model](model.md) § 3) is no part of its edge: the flag reads J's words, the
 reading J's argument, and a flip changes neither, so it lapses nothing by
 itself; where a line turned `analogy` adds the uses edge naming what it
-carries over, that edge lapses the reading as an edge added.
+carries over, that edge lapses the reading as an edge added. A line
+inside a block, from one of its parts onto another ([the
+model](model.md) § 3), is in no one hop: it says which part writes which,
+and a reading of the block reads its text whole already, so placing a
+block's lines lapses none of its readings.
 
 **A reading asked again.** A reading that did not `verify` is **asked again**
 where its evidence grew: of its subject's works and each other work it
@@ -1892,8 +1902,8 @@ it is the update's, whose session writes a changed block's lines. The
 argument session asks a rule line only of a claim a live search read,
 and a justifies, self or about line it writes on one corrects the
 search, standing it argued. A build and an update end with the search,
-after the reread and before the circles' question, unless the profile
-turns it off (`search_support_after_edges`).
+after the reread and before the placing and the circles' question,
+unless the profile turns it off (`search_support_after_edges`).
 
 ### A cited work's files as evidence (the model's § 8)
 
@@ -1969,6 +1979,39 @@ arXiv), else by a record whose title and first author are the entry's
 author differs is passed, never taken. Each version names where it was
 found and how it was matched: a match by title can be wrong.
 
+### The placing (the model's § 9)
+
+`place --ask` asks where a block's lines leave from, a queue (§ 2) of the
+blocks to place: a block no line names a part it leaves from (not
+placed), that a uses line relying on its content enters at parts holding
+less than the block's words, and that gives beyond what those parts name
+(a uses line out of it not `assumed`, or a qualifies line onto another
+part). An agent is served
+each block's text, its parts, the lines entering it at its parts, its
+own uses lines numbered and the qualifiers onto it, and answers each
+once; code writes the lines. **Placed**: the parts it adds for words a
+line leaves from that no part holds (a content role, never a claim's
+words: a line from the block whole is given at every part, so a block of
+one part is placed only by adding another), each line with the parts it
+leaves from, or none (the block whole), and each part's sibling parts it
+writes, with the words that write them; each part's legend line is
+added, each line placed is taken off and given back with its source
+bracket naming them, and each part's sibling line added, `→ uses
+[<part>] <block> [<parts>]`; checked at once on the working state, then
+given, once every block is answered, as one edges edit, a new state. The answer only places: it changes no line's
+kind, target, target end, mark or quote, takes no line off, adds no line
+out of the block, no part no line names and no part holding words a
+part holds (the walk reads parts by their labels), and leaves a line a
+person pinned as written; a placing that places no line and names no
+sibling is refused. **Whole**: no line leaves from one part apart, or the parts write each
+other throughout, filed with why under the block's key (its words, its
+parts, its lines and the qualifiers onto it, `placing.block_key`); never
+asked again while the key stands, and a changed key is another block. A
+build ends with the placing of the state it keeps, and an update after
+its reread and its search, before the circles' question, which reads
+what the placed lines change of what claims rest on, unless the profile
+turns it off (`place_lines_after_edges`).
+
 ### The circles' question (the model's § 9)
 
 `circles --ask` asks what each end relies on, a queue of the circles no
@@ -1994,7 +2037,7 @@ circle is read real with a proposal. Nothing makes a paper pass: a
 refined circle's claims are established once their routes hold, and a
 real one fails the gate until a person or the paper changes a line. A
 build ends with the question on the circles of the state it keeps, and
-an update after its reread and its search, whose lines the circles
-read, unless the profile turns it off (`ask_circles_after_edges`): a
+an update after its reread, its search and its placing, whose lines the
+circles read, unless the profile turns it off (`ask_circles_after_edges`): a
 circle is asked before any
 review spends on claims that cannot be established.

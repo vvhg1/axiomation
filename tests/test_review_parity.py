@@ -878,6 +878,29 @@ REFUSALS: tuple[Refusal, ...] = (
         ),
     ),
     Refusal(
+        "review_file.narrowed",
+        "a uses line leaving from parts where its owner's line leaves from the "
+        "block whole",
+        "edge_problems: `edges_applied`",
+        Shown(
+            "argument",
+            (
+                "edge by-definition-def:gain-the → uses [x] small-means-below-one · "
+                '"the gain is small" — from a part',
+            ),
+            "leaves from by-definition-def:gain-the whole: a line leaving from "
+            "parts would narrow it",
+            EDGES_OFF,
+        ),
+    ),
+    Refusal(
+        "review_file.narrowed",
+        "a uses line leaving from fewer parts than its owner's line left from",
+        "edge_problems: `edges_applied`",
+        why="the fixture's sheet holds no line leaving from a part; "
+        "`test_review`'s test of the parts a block's lines leave from shows it",
+    ),
+    Refusal(
         "review_file.edges_applied",
         "a uses line that narrows the line it replaces, or a self or about line "
         "onto a standing a person kept",

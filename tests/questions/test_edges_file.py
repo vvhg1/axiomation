@@ -2878,3 +2878,40 @@ def test_a_state_s_sheet_renders_back_from_its_export(
     sheet = ef.state_sheet(paper.document, roled, FILES, export, recorded.edges.orders)
 
     assert sheet == ef.carry(paper.document, found.kept, roled, roled, FILES).sheet
+
+
+def test_a_line_naming_a_part_the_edit_removed_is_refused_at_either_end():
+    """Both update gates refuse a line that leaves from, or names, a part
+    whose words an edit removed, the legend no longer holding it; on an
+    owner not reopened the session's gate leaves it to its Δ."""
+    from axiomation.questions import edge_sheet as es
+    from axiomation.questions.edges_file import _dropped_part_problems
+
+    sheet = es.parse(
+        "\n".join(
+            [
+                '  d [g]: "Let g be a gain."',
+                "",
+                "---",
+                "",
+                "⟦a definition⟧ paper.md:1:1 (prose)",
+                "Assume g is even.",
+                "⟦done a⟧",
+                "",
+                "⟦d definition⟧ paper.md:3:1 (prose)",
+                "Let g be a gain. Let h be a loss.",
+                '→ uses [h] a · "Let h be a loss."',
+                '→ uses a [x] · "Let g be a gain."',
+                "⟦done d⟧",
+            ]
+        )
+    )
+    gone = {("d", "h"), ("a", "x")}
+    found = _dropped_part_problems(sheet, gone)
+    assert [p.split(": ", 1)[1] for p in found] == [
+        "d → uses a leaves from [h], whose words the edit removed: name the "
+        "block whole, or a part its text holds now",
+        "d → uses a names [x], whose words the edit removed: name the block "
+        "whole, or a part its text holds now",
+    ]
+    assert _dropped_part_problems(sheet, gone, opened={"a"}) == []

@@ -1206,8 +1206,12 @@ def test_a_prepared_sheet_shows_each_claim_s_handle_where_a_block_holds_several(
         ),
         (
             ('→ uses b1 · "By the gain"', '→ uses [bounded] b1 · "By the gain"'),
-            "only a self mark, an about edge or an assumed uses edge names claims of "
-            "its own block",
+            "no part [bounded] of p in the legend",
+        ),
+        (
+            ("→ uses t [bounded]", "→ uses [bounded] t"),
+            "[bounded] is t's: a target's part or claim goes in the bracket after "
+            "the target",
         ),
         (
             ("→ self [small]", "→ self [nope]"),
@@ -1409,3 +1413,93 @@ def test_only_an_assumed_uses_edge_names_its_own_block_s_claims():
     assert any(
         "an assumed uses edge names claims of its own block" in p for p in problems
     )
+
+
+#: A block of two definitions whose lines name the parts they leave from:
+#: g's line onto a1, h's onto a2, and h written in terms of g.
+LEAVING = """# a sheet whose lines leave from parts
+
+  d [g]: "Let $g$ be a gain."
+  d [h]: "Let $h$ be a loss on $g$."
+
+---
+
+⟦a1 assumption⟧ paper.md:1:1 (prose)
+Assume g is even.
+⟦done a1⟧
+
+⟦a2 assumption⟧ paper.md:3:1 (prose)
+Assume h is odd.
+⟦done a2⟧
+
+⟦d definition⟧ paper.md:5:1 (prose)
+Let $g$ be a gain. Let $h$ be a loss on $g$.
+→ uses [g] a1 · "Let $g$ be a gain."
+→ uses [h] a2 · "Let $h$ be a loss"
+→ uses [h] d [g] · "a loss on $g$"
+⟦done d⟧
+"""
+
+
+def test_a_line_leaving_from_a_part_and_a_sibling_line_pass_and_are_recorded():
+    """The bracket after a uses line's kind names the parts of its block it
+    leaves from; a uses line from a part onto another part of its block is
+    the one line inside a block. The records carry each source part."""
+    assert check(LEAVING) == []
+    found = records(LEAVING, {h: h for h in parse(LEAVING).texts})
+    assert [(e.target.name, e.source_parts, e.parts) for e in found.edges] == [
+        ("a1", ("g",), ()),
+        ("a2", ("h",), ()),
+        ("d", ("h",), ("g",)),
+    ]
+
+
+def test_two_uses_lines_onto_one_target_pass_from_disjoint_parts():
+    """Each part's line onto one target stands apart; a part named twice
+    is a second line."""
+    apart = LEAVING.replace("→ uses [h] a2", "→ uses [h] a1")
+    assert check(apart) == []
+    shared = LEAVING.replace("→ uses [h] a2", "→ uses [g, h] a1")
+    assert any(
+        "a second edge for one source, kind and target (two uses lines leave from "
+        "disjoint parts of the source)" in p
+        for p in check(shared)
+    )
+
+
+@pytest.mark.parametrize(
+    ("change", "problem"),
+    [
+        (
+            ("→ uses [g] a1", "→ uses [k] a1"),
+            "d → uses a1: no part [k] of d in the legend",
+        ),
+        (
+            ("→ uses [h] d [g]", "→ uses d [g]"),
+            "d → uses d: an edge inside its own block; only a uses line runs inside "
+            "one, from a part onto another",
+        ),
+        (
+            ("→ uses [h] d [g]", "→ uses [h] d"),
+            "d → uses d: an edge inside its own block; only a uses line runs inside "
+            "one",
+        ),
+        (
+            ("→ uses [h] d [g]", "→ uses [h] d [h]"),
+            "d → uses d: [h] at both ends: a part uses another part",
+        ),
+        (
+            (
+                '→ uses [g] a1 · "Let $g$ be a gain."',
+                '→ about [g] a1 · "Let $g$ be a gain."',
+            ),
+            "d → about a1: [g] is no claim's handle on d; a part of d is named at "
+            "the source end of a uses line only",
+        ),
+    ],
+)
+def test_the_gate_refuses_a_source_part_out_of_place(change, problem):
+    old, new = change
+    assert old in LEAVING
+    problems = check(LEAVING.replace(old, new, 1))
+    assert any(problem in p for p in problems), problems

@@ -31,7 +31,11 @@ from axiomation.commands import (
 )
 from axiomation.commands import review as reviewing
 from axiomation.commands import update as updating
-from axiomation.commands.build import no_circles_argument, no_search_argument
+from axiomation.commands.build import (
+    no_circles_argument,
+    no_place_argument,
+    no_search_argument,
+)
 from axiomation.commands.seating import Asking
 from axiomation.questions.review_file import named_alone, sessions_named
 from axiomation.records import RecordStore
@@ -53,6 +57,7 @@ class Sync:
     prompts: Path | None = None
     no_reread: bool = False
     no_search: bool = False
+    no_place: bool = False
     no_circles: bool = False
     asking: Asking = field(default_factory=Asking)
 
@@ -68,8 +73,9 @@ def run(asked: Sync, say: Say) -> int:
     """`sync PAPER`: `update` where the paper's text is not the latest kept
     state's version; then, as the profile asks them after an update,
     `reread --ask` on the marks still open, `support --ask` on the claims
-    standing unsupported no live search read and `circles --ask` on the
-    circles still unread, so a round the update left unanswered is asked
+    standing unsupported no live search read, `place --ask` on the blocks
+    to place no word reads whole and `circles --ask` on the circles still
+    unread, so a round the update left unanswered is asked
     again; then `review` over the sessions named, else each seat the
     profile asks by default, all on one budget; then the inbox at the
     latest state. Each step is its own command's run, with its flags'
@@ -132,6 +138,7 @@ def run(asked: Sync, say: Say) -> int:
             root=asked.root,
             no_reread=asked.no_reread,
             no_search=asked.no_search,
+            no_place=asked.no_place,
             no_circles=asked.no_circles,
             dry_run=dry,
             prompts=_under(asked.prompts, "update"),
@@ -154,6 +161,7 @@ def run(asked: Sync, say: Say) -> int:
     for command, wanted in (
         ("reread", profile.reread_marks_after_update and not asked.no_reread),
         ("support", profile.search_support_after_edges and not asked.no_search),
+        ("place", profile.place_lines_after_edges and not asked.no_place),
         ("circles", profile.ask_circles_after_edges and not asked.no_circles),
     ):
         if not wanted:
@@ -177,6 +185,11 @@ def run(asked: Sync, say: Say) -> int:
                 paper=paper, ask=True, dry_run=dry, prompts=prompts, asking=asking
             )
             step = asks.support(searched, say)
+        elif command == "place":
+            placed = asks.Place(
+                paper=paper, ask=True, dry_run=dry, prompts=prompts, asking=asking
+            )
+            step = asks.place_of(placed, say)
         else:
             circled = asks.Circles(
                 paper=paper, ask=True, dry_run=dry, prompts=prompts, asking=asking
@@ -279,6 +292,7 @@ def _sync_command(commands: Any) -> None:
     prompts_argument(sync)
     updating.no_reread_argument(sync)
     no_search_argument(sync)
+    no_place_argument(sync)
     no_circles_argument(sync)
 
 

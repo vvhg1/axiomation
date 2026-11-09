@@ -25,7 +25,11 @@ about the text over the whole paper), or `file:<path>`. A part names which
 part of a target of several parts the edge relies on, by a legend line in
 the header, `  b32 [C_n²]: "<the target's own words>"`; the line may end
 in a role, `(definition)`, where the part's content plays another role than
-its segment. The mark is `ref`, `name` or `position`, or absent. The flag
+its segment. A uses line may leave from parts of its own block, named in
+the bracket after its kind, `→ uses [<part>, …] T`: they write what it
+relies on, the rest of the block does not. One uses line runs inside its
+block: from a part onto another part of it, `→ uses [π] b9 [W]` (π is
+written in terms of W). The mark is `ref`, `name` or `position`, or absent. The flag
 `where-used`, on an about edge only, says the source claims where the
 target is used. The flag `generalizes`, on an about edge from a block
 with an assumption role onto an assumption or a definition's content,
@@ -481,7 +485,8 @@ class Edge:
     line: int = field(default=0, compare=False)
     #: the source block's own claims it names, by handle: a self mark's
     #: that it supports, an about edge's that restate, an assumed uses
-    #: edge's that take its target as a hypothesis
+    #: edge's that take its target as a hypothesis; or a uses edge's
+    #: parts of its block it leaves from, by label (`source_parts`)
     own: tuple[str, ...] = ()
 
     @property
@@ -953,6 +958,14 @@ def legend_labels(sheet: Sheet, tokens: Sequence[str], target: str) -> tuple[str
     return tuple(t for t in tokens if t not in held)
 
 
+def source_parts(sheet: Sheet, e: Edge) -> tuple[str, ...]:
+    """The parts of its block a line leaves from: the tokens of its own
+    bracket that are no claim's handle there (legend labels, or, where the
+    gate refused one, an unknown token), `[-]` aside."""
+    held = claim_handles(sheet, e.source)
+    return tuple(t for t in e.own if t not in held and t != RESTATES_NONE)
+
+
 def check(
     text: str,
     cut_ids: list[str] | None = None,
@@ -990,10 +1003,10 @@ def check(
         if role not in ROLES and role != STANDARD:
             problems.append(f"part {target} [{label}]: no such role {role!r}")
     problems += _handle_problems(sheet)
-    seen: dict[tuple[str, str, str], list[frozenset[str]]] = {}
+    seen: dict[tuple[str, str, str], list[tuple[frozenset[str], frozenset[str]]]] = {}
     for e in sheet.edges:
         where = f"{e.source} → {e.kind} {e.target}".rstrip()
-        problems += _named_problems(sheet, e, where)
+        problems += _named_problems(sheet, e, where, gone)
         if e.kind == SELF:
             if e.target or e.parts or e.mark or set(e.flag.split()) - set(PARTIALS):
                 problems.append(f"{where}: a self mark has no target, part or mark")
@@ -1001,7 +1014,7 @@ def check(
             problems.append(f"{where}: no such kind")
         elif e.target in handles:
             if e.target == e.source:
-                problems.append(f"{where}: an edge inside its own block")
+                problems += _sibling_problems(sheet, e, where)
         elif not SCOPE.match(e.target) and not e.target.startswith(FILE):
             problems.append(f"{where}: no such target")
         if e.kind in ("uses", "about") and e.source in sheet.groups:
@@ -1044,16 +1057,23 @@ def check(
             )
         key = (e.source, e.kind, e.target)
         named = frozenset(e.parts)
-        if e.kind != SELF and key in seen and not _apart(e.kind, named, seen[key]):
+        leaving = frozenset(source_parts(sheet, e)) if e.kind == "uses" else frozenset()
+        if (
+            e.kind != SELF
+            and key in seen
+            and not _apart(e.kind, named, leaving, seen[key])
+        ):
             problems.append(
                 f"{where}: a second edge for one source, kind and target"
                 + (
                     " (two justifies lines name disjoint claims of the target)"
                     if e.kind == "justifies"
+                    else " (two uses lines leave from disjoint parts of the source)"
+                    if leaving or any(x for _, x in seen[key])
                     else ""
                 )
             )
-        seen.setdefault(key, []).append(named)
+        seen.setdefault(key, []).append((named, leaving))
     problems += _support_problems(sheet, claims_fixed)
     problems += _cut_problems(sheet, within or {})
     problems += _flag_problems(sheet)
@@ -1113,13 +1133,18 @@ def _handle_problems(sheet: Sheet) -> list[str]:
     return problems
 
 
-def _named_problems(sheet: Sheet, e: Edge, where: str) -> list[str]:
-    """The claims a line names by handle: its own
-    bracket, on a self mark, an about edge or an `assumed` uses edge only,
-    names claims of its block of the standing it may name (a self mark's
-    `self`, an about edge's `restated`, an assumed edge's any); a justifies
-    line's handles name `justified` claims of its target, and a justifies
-    line naming parts names a claim."""
+def _named_problems(
+    sheet: Sheet, e: Edge, where: str, gone: Collection[tuple[str, str]] = ()
+) -> list[str]:
+    """The claims and parts a line names at its source end, and the claims
+    it names by handle: its own bracket, on a self mark, an about edge or
+    an `assumed` uses edge only, names claims of its block of the standing
+    it may name (a self mark's `self`, an about edge's `restated`, an
+    assumed edge's any); on a uses edge not `assumed`, the parts of its
+    block it leaves from, each in the legend (or one the edit removed,
+    `gone`, which the update's gate decides); a justifies line's handles
+    name `justified` claims of its target, and a justifies line naming
+    parts names a claim."""
     problems = []
     if RESTATES_NONE in e.own:
         if e.kind != "about":
@@ -1136,7 +1161,34 @@ def _named_problems(sheet: Sheet, e: Edge, where: str) -> list[str]:
         assumed = e.kind == "uses" and e.assumed
         status = _OWN_STATUS.get(e.kind)
         held = standings_by_handle(sheet, e.source)
-        if status is None and not assumed:
+        leaving = source_parts(sheet, e)
+        if e.kind == "uses" and not assumed:
+            if len(leaving) < len(e.own):
+                problems.append(
+                    f"{where}: only a self mark, an about edge or an assumed uses "
+                    "edge names claims of its own block, in the bracket after its "
+                    "kind; a uses line names there the parts of its block it "
+                    "leaves from"
+                )
+            for label in leaving:
+                known = (e.source, label) in sheet.legend or (e.source, label) in gone
+                if not known and (
+                    (e.target, label) in sheet.legend
+                    or label in claim_handles(sheet, e.target)
+                ):
+                    problems.append(
+                        f"{where}: [{label}] is {e.target}'s: a target's part or "
+                        "claim goes in the bracket after the target "
+                        f"(`→ uses {e.target} [{label}]`); the bracket after the "
+                        "kind names the parts of its own block it leaves from"
+                    )
+                elif not known:
+                    problems.append(
+                        f"{where}: no part [{label}] of {e.source} in the legend (a "
+                        f"header line, {LEGEND_FORM}: '  {e.source} [{label}]: "
+                        '"<words>"\')'
+                    )
+        elif status is None and not assumed:
             problems.append(
                 f"{where}: only a self mark, an about edge or an assumed uses edge "
                 "names claims of its own block, in the bracket after its kind"
@@ -1144,9 +1196,15 @@ def _named_problems(sheet: Sheet, e: Edge, where: str) -> list[str]:
         for h in e.own if status or assumed else ():
             s = held.get(h)
             if s is None:
+                part = (e.source, h) in sheet.legend
                 problems.append(
                     f"{where}: [{h}] is no claim's handle on {e.source}"
-                    + _handles_named({k: v.claim for k, v in held.items()})
+                    + (
+                        f"; a part of {e.source} is named at the source end of a "
+                        "uses line only, not assumed"
+                        if part
+                        else _handles_named({k: v.claim for k, v in held.items()})
+                    )
                 )
             elif status is not None and s.status != status:
                 problems.append(
@@ -1379,15 +1437,50 @@ def _gives_reason(evidence: str, claim: str) -> bool:
     return words not in norm(evidence)
 
 
-def _apart(kind: str, named: frozenset[str], before: list[frozenset[str]]) -> bool:
-    """Whether a justifies line may stand beside the lines from its source
-    onto its target: each names claims, none of them shared, so each claim's
-    completeness is read from its own line (`docs/model.md` § 3)."""
-    return (
-        kind == "justifies"
-        and bool(named)
-        and all(other and not (other & named) for other in before)
-    )
+def _apart(
+    kind: str,
+    named: frozenset[str],
+    leaving: frozenset[str],
+    before: list[tuple[frozenset[str], frozenset[str]]],
+) -> bool:
+    """Whether a line may stand beside the lines from its source onto its
+    target: justifies lines each naming claims, none of them shared, so
+    each claim's completeness is read from its own line; uses lines each
+    leaving from parts of their block, none of them shared, so each part's
+    lines are its own (`docs/model.md` § 3)."""
+    if kind == "justifies":
+        return bool(named) and all(n and not (n & named) for n, _ in before)
+    if kind == "uses":
+        return bool(leaving) and all(x and not (x & leaving) for _, x in before)
+    return False
+
+
+def _sibling_problems(sheet: Sheet, e: Edge, where: str) -> list[str]:
+    """A line inside its own block: only a uses line from parts of the
+    block onto other parts of it, each end naming parts and no claim (a
+    part writes a symbol a sibling part defines, `docs/model.md` § 3)."""
+    leaving = source_parts(sheet, e)
+    onto = legend_labels(sheet, e.parts, e.target)
+    if (
+        e.kind != "uses"
+        or e.assumed
+        or not leaving
+        or not e.parts
+        or len(onto) < len(e.parts)
+    ):
+        return [
+            f"{where}: an edge inside its own block"
+            + (
+                f"; only a uses line runs inside one, from a part onto another "
+                f"(`→ uses [<part>] {e.source} [<part>]`)"
+                if leaving or e.parts
+                else ""
+            )
+        ]
+    shared = [p for p in onto if p in leaving]
+    if shared:
+        return [f"{where}: [{shared[0]}] at both ends: a part uses another part"]
+    return []
 
 
 def _generalizes_problems(sheet: Sheet, e: Edge, where: str) -> list[str]:

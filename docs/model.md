@@ -183,7 +183,9 @@ is named by its standing's handle (§ 4), and a part an edge relies on
 inside a claim is content. A formula that later blocks write as notation
 or define something by ("satisfying the conclusion of Theorem 1") is a
 definition part, so a change to it moves its users' meaning (§ 5); a
-hypothesis is an assumption part, a step a justification part.
+hypothesis is an assumption part, a step a justification part. A uses
+line's source end may name parts too: the parts of its block it leaves
+from (§ 3).
 
 ## 3. Edges
 
@@ -377,7 +379,9 @@ paragraph that writes μₜ three times has one uses edge to μₜ's part, with
 the three places as evidence excerpts. A justification that argues the
 target's claims apart, one case written out and another declared similar,
 has one justifies line per claim it argues, each naming its claims, none
-shared: each claim's completeness is its own line's (§ 4). An edge records how the text points
+shared: each claim's completeness is its own line's (§ 4). Uses lines
+from one block onto one target stand apart where each leaves from its
+own parts, none shared (below). An edge records how the text points
 at its target:
 
 <!-- closed set: axiomation.records.Mark -->
@@ -390,11 +394,23 @@ at its target:
 and its author: the answer that first wrote its line, by a model, an
 agent or a person.
 
-**No edge inside a block.** A block whose claim carries its own reason or
-citation supports it itself, recorded as a **self mark** on the block,
-so a missed outward edge never reads as self-support. Cycles between
-blocks are allowed (notation used before its definition, which uses it
-back); a re-check runs each edge once.
+**Where a line leaves from.** A uses line may name, at its source end,
+the parts of its block that write the reliance (`→ uses [<part>] T`):
+the rest of the block does not. A line naming none leaves from the block
+whole. A block where a line names a source part is **placed**: each of
+its lines leaves from its parts or from it whole, and § 9 reads it by
+its parts. Without that, which of a block's lines a part's text writes
+is not in the graph: a line's target end may name a part, its source end
+only the block. Only a uses line
+names a source part, and not an `assumed` one.
+
+**No edge inside a block,** but one: a uses line from a part onto
+another part of the block, where the part writes a symbol its sibling
+defines (`→ uses [π] b9 [W]`: π is written in terms of W). A block whose
+claim carries its own reason or citation supports it itself, recorded as
+a **self mark** on the block, so a missed outward edge never reads as
+self-support. Cycles between blocks are allowed (notation used before
+its definition, which uses it back); a re-check runs each edge once.
 
 **The ambient frame** is the pervasive set-up only: the probability space,
 the field's conventions, standard notation (φ, Φ, N(·,·)). It has no listed
@@ -1371,6 +1387,31 @@ the claim reaches the reused step, an edit to the step reaches the proof
 that reuses it (§ 5), and a stale mark on the step counts against the
 reusing claim.
 
+**A placed block** (§ 3) is walked through at the parts an edge onto it
+names, where the edge relies on its content, and at the parts those use
+(their sibling lines, in turn): the walk takes the uses lines leaving
+from those parts or from the block whole, and the qualifies lines onto
+those parts or onto the block whole. A line leaving from another part,
+or a qualifier of another part, is not taken in. Entered whole (a start,
+a group's member, a context's statement, a qualifier's source, an edge
+naming no part, or one naming a claim), every line is, and a block
+entered again at more parts widens. A block no line leaves from a part
+of is walked whole, whatever part an edge onto it names. The statement's
+walk and the J's are the one walk; whether a walked block is a premise
+is its roles'; a claim's own block is walked whole from its statement.
+
+`place --ask` places the lines of each block an edge relying on its
+content enters at a part, where none of its lines names a part it leaves
+from and the walk would give more than that part names: an agent answers
+each block **placed**, naming the parts each line leaves from (or the
+block whole, given at every part; a part it adds holds a sentence a line
+leaves from) and the parts each part writes, or **whole**, no line
+leaving from one part apart, filed with why under the block's key
+(its words, parts and lines) and not asked again while it stands. The
+answer only places: it changes no line's target or quote ([the
+architecture](architecture.md) § 9). A person places a line
+by `change`.
+
 It is a least fixed point, so circular support establishes nothing, and
 a fresh build establishes nothing until it is judged.
 
@@ -1397,7 +1438,11 @@ edges are found for recall, and such an end reads toward the alarm (§ 3,
 | `sibling` | restates a claim that is itself `restated` |
 
 A candidate is not a verdict: a line onto a claim alone may still rely
-on a hypothesis written inside it. No rule breaks a circle, since one
+on a hypothesis written inside it. Naming a content part walks its
+block in place of asking its claims; on a block that is not placed
+(above) the walk still takes in every line of it, so to narrow further
+the block's own lines name the parts they leave from. No rule breaks a
+circle, since one
 that dropped an edge, relaxed a fallback or skipped an ask would hide a
 real circle as readily as a false one: only a line's ends named as the
 text relies on, or the paper changed. A circle whose every end is named

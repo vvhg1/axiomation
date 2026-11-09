@@ -508,6 +508,60 @@ def test_a_narrowed_line_is_written_by_its_brackets_alone() -> None:
     )
 
 
+def test_a_uses_line_s_source_end_names_the_parts_it_leaves_from() -> None:
+    """Narrowed at its source end, a uses line names the parts of its block
+    it leaves from, some of those it named, never none (`[-]`, an about
+    line's)."""
+    assert circles_._narrowed('→ uses t · "q"', '→ uses [p] t · "q"', "o") == []
+    assert circles_._narrowed('→ uses [p, r] t · "q"', '→ uses [p] t · "q"', "o") == []
+    (refused,) = circles_._narrowed('→ uses t · "q"', '→ uses [-] t · "q"', "o")
+    assert "[-] is an about line's" in refused
+
+
+def _placing_gain(served: str) -> tuple[str, dict]:
+    """A circle's answer: the whole line named [gain], and the definition's
+    line onto the bound placed at its part [gain]."""
+    tool, args = refine(served)
+    (gain,) = [x.split()[0] for x in served.splitlines() if GAIN_LINE in x]
+    return tool, {
+        **args,
+        "narrow": [*args["narrow"], {"line": gain, "own_end": ["gain"]}],
+    }
+
+
+def test_a_refined_answer_places_no_line_of_a_block_not_placed(tmp_path) -> None:
+    """The definition's lines name no part they leave from: placing one is
+    the placing's word on every line of the block, never a circle's."""
+    v, state = circular(tmp_path)
+    (a,) = asked_at(v.store, state)
+    s = served(v.store, state, tmp_path)
+    task = s.next()
+    text, refused = s.call("refined", _placing_gain(task)[1])
+    assert refused and "`place --ask`'s; keep this end as it is" in text, text
+    assert a.key in text
+
+
+def test_a_refined_answer_may_place_a_line_of_a_placed_block(tmp_path) -> None:
+    """Where the definition's other line leaves from [gain] already, the
+    block is read by its parts: its line onto the bound may name [gain]
+    too, a source part being no claim of the circle."""
+    v, state = circular(tmp_path)
+    placed = given(
+        v.store,
+        lambda sheet: sheet.replace(
+            '→ uses we-fix-a-field [K] · "The gain is the ratio"',
+            '→ uses [gain] we-fix-a-field [K] · "The gain is the ratio"',
+        ),
+        edits.agent("model-a", "s1"),
+    )
+    assert placed.state is not None, placed.problems
+    done, _ = circled(v.store, placed.state, _placing_gain)
+    assert done.outcome.state is not None, done.outcome.problems
+    with edits.opened(v.store, done.outcome.state) as kept:
+        sheet = edits.shown(kept, Layer.EDGES)
+    assert '→ uses [gain] next-the-bound-is · "The gain is the ratio"' in sheet
+
+
 @pytest.mark.parametrize(
     ("args", "refused"),
     [

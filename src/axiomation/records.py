@@ -114,6 +114,9 @@ class RecordKind(StrEnum):
     #: A claim's support searched and none found: the paper argues it
     #: nowhere.
     SEARCHES = "searches"
+    #: A block entered at a part whose lines are read whole: its parts
+    #: cannot be read apart.
+    WHOLE_BLOCKS = "whole-blocks"
     #: Suggestions: a work the paper may want to cite at a place; and their
     #: answers, the author's decision.
     SUGGESTIONS = "suggestions"
@@ -497,9 +500,10 @@ RESTATES_NONE = "-"
 @dataclass(frozen=True, slots=True)
 class Edge:
     """An edge from `source`, a block, or a group for justifies; `parts`
-    are labels of entries of the same answer on the target block;
-    `evidence` the source's own words. `claims` are the words of the
-    target's standings the edge names, `source_claims` those of the
+    are labels of entries of the same answer on the target block,
+    `source_parts` those on the source block a uses edge leaves from
+    (none: the block whole); `evidence` the source's own words. `claims`
+    are the words of the target's standings the edge names, `source_claims` those of the
     source's an about edge restates from, or an `assumed` uses edge takes
     its target as a hypothesis of: none where
     the line names none; `restates_none` where an about line says it
@@ -528,6 +532,8 @@ class Edge:
     #: on a uses edge onto a `conjectured` claim only: the source's
     #: statement takes the claim as a hypothesis (`docs/model.md` § 9)
     assumed: bool = False
+    #: on a uses edge only (`docs/model.md` § 3)
+    source_parts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1269,6 +1275,23 @@ class RealCircle:
 
 
 @dataclass(frozen=True, slots=True)
+class WholeBlock:
+    """An agent's or a person's word that a block an edge enters at a part
+    is read whole (`docs/model.md` § 9): at the kept state `state`, none of
+    its lines can be placed at a part it leaves from, and no part of it
+    writes another apart. The block by its key (`placing.block_key`: its
+    words, its parts, its lines and the qualifiers onto it), and why. It
+    changes no line; a block whose key changes is asked again. Its author
+    is its answer's."""
+
+    id: str
+    answer: str | None
+    state: str
+    block: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class Suggestion:
     """A work the paper may want to cite at a place (docs/model.md § 8):
     its anchors, the block or group first, then each work suggested; why a
@@ -1327,6 +1350,7 @@ Filing = (
     | Reread
     | RealCircle
     | Searched
+    | WholeBlock
     | Suggestion
     | SuggestionAnswer
     | ContributionCheck
@@ -1349,6 +1373,7 @@ class JudgmentRecords:
     rereads: tuple[Reread, ...] = ()
     circles: tuple[RealCircle, ...] = ()
     searches: tuple[Searched, ...] = ()
+    wholes: tuple[WholeBlock, ...] = ()
     suggestions: tuple[Suggestion, ...] = ()
     suggestion_answers: tuple[SuggestionAnswer, ...] = ()
     checks: tuple[ContributionCheck, ...] = ()
@@ -1368,6 +1393,7 @@ class JudgmentRecords:
             *self.rereads,
             *self.circles,
             *self.searches,
+            *self.wholes,
             *self.suggestions,
             *self.suggestion_answers,
             *self.checks,
@@ -1489,6 +1515,7 @@ def _edge_data(r: Edge) -> dict[str, Any]:
         **({"source_claims": list(r.source_claims)} if r.source_claims else {}),
         **({"restates_none": True} if r.restates_none else {}),
         **({"assumed": True} if r.assumed else {}),
+        **({"source_parts": list(r.source_parts)} if r.source_parts else {}),
     }
 
 
@@ -1831,6 +1858,16 @@ def _suggestion_data(r: Suggestion) -> dict[str, Any]:
     } | ({"pages": [_stamp_data(p) for p in r.pages]} if r.pages else {})
 
 
+def _whole_data(r: WholeBlock) -> dict[str, Any]:
+    return {
+        "id": r.id,
+        "answer": r.answer,
+        "state": r.state,
+        "block": r.block,
+        "reason": r.reason,
+    }
+
+
 def _check_data(r: ContributionCheck) -> dict[str, Any]:
     return {
         "id": r.id,
@@ -1866,6 +1903,8 @@ def judgment_data(r: Filing) -> dict[str, Any]:
         return _circle_data(r)
     if isinstance(r, Searched):
         return _searched_data(r)
+    if isinstance(r, WholeBlock):
+        return _whole_data(r)
     if isinstance(r, RulingWithdrawal):
         return _withdrawal_data(r)
     if isinstance(r, AnswerWithdrawal):
@@ -2264,6 +2303,7 @@ def _edge_from(data: Any, at: _Where) -> Edge:
             "source_claims",
             "restates_none",
             "assumed",
+            "source_parts",
         },
         at,
     )
@@ -2286,6 +2326,7 @@ def _edge_from(data: Any, at: _Where) -> Edge:
         restates_none="restates_none" in data
         and _take(data, "restates_none", bool, at),
         assumed="assumed" in data and _take(data, "assumed", bool, at),
+        source_parts=_strings(data.get("source_parts", []), "source_parts", at),
     )
 
 
@@ -2803,6 +2844,20 @@ def _searched_from(data: Any, at: _Where) -> Searched:
     )
 
 
+def _whole_from(data: Any, at: _Where) -> WholeBlock:
+    rid, answer = _record_start(data, {"state", "block", "reason"}, at)
+    reason = _take(data, "reason", str, at)
+    if not reason.strip():
+        raise at.error("reason", "a block read whole gives its reason")
+    return WholeBlock(
+        id=rid,
+        answer=answer,
+        state=_take(data, "state", str, at),
+        block=_take(data, "block", str, at),
+        reason=reason,
+    )
+
+
 def _run_from(data: Any, at: _Where) -> RunStamp:
     data = _object(
         data,
@@ -2943,6 +2998,7 @@ JUDGMENT_KINDS = (
     _Kind(RecordKind.CONTRIBUTION_CHECKS, "checks", _check_data, _check_from),
     _Kind(RecordKind.FILES_SEEN, "files", _file_seen_data, _file_seen_from),
     _Kind(RecordKind.SEARCHES, "searches", _searched_data, _searched_from),
+    _Kind(RecordKind.WHOLE_BLOCKS, "wholes", _whole_data, _whole_from),
 )
 
 

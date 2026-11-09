@@ -16,6 +16,7 @@ from typing import Any
 from axiomation import develop, person, queries, queue, update_queue, versions
 from axiomation.commands import (
     DRY_RUN_HELP,
+    FOLLOW_UPS,
     STORE_HELP,
     SUMMARY_JSON_HELP,
     Exit,
@@ -43,6 +44,7 @@ from axiomation.commands import (
 )
 from axiomation.commands.build import (
     no_circles_argument,
+    no_place_argument,
     no_search_argument,
     person_counts,
     shown,
@@ -431,6 +433,7 @@ class Update:
     from_nothing: bool = False
     no_reread: bool = False
     no_search: bool = False
+    no_place: bool = False
     no_circles: bool = False
     dry_run: bool = False
     json: bool = False
@@ -600,6 +603,9 @@ def run(asked: Update, say: Say, edited: State | None = None) -> Ran:
             support_with=seating.search_seated(profile, hosted=False)
             if profile.search_support_after_edges and not asked.no_search
             else None,
+            place_with=seating.edges_seated(agents[Stage.EDGES], False, "the placing")
+            if profile.place_lines_after_edges and not asked.no_place
+            else None,
             circles_with=seating.edges_seated(
                 agents[Stage.EDGES], False, "the circles question"
             )
@@ -718,6 +724,7 @@ def run(asked: Update, say: Say, edited: State | None = None) -> Ran:
         ]
     reread_stop: Stop | None = None
     support_stop: Stop | None = None
+    place_stop: Stop | None = None
     circles_stop: Stop | None = None
     if result.complete:
         payload = update_payload(document, result, store)
@@ -808,14 +815,39 @@ def run(asked: Update, say: Say, edited: State | None = None) -> Ran:
                         )
                         last = summary["support"].get("state", last)
                 support = summary.get("support", {})
+                searched = not {"unanswered", "refused"} & set(support)
+                if (
+                    profile.place_lines_after_edges
+                    and not asked.no_place
+                    and whole
+                    and searched
+                ):
+                    # after the reread and the search, before the circles,
+                    # which read what the placed lines change
+                    placed = asks.place_after(
+                        store,
+                        versions.state(store, last) if last else kept,
+                        profile,
+                        given.profiles,
+                        runner,
+                        agents[Stage.EDGES],
+                    )
+                    if placed is not None:
+                        summary["place"], place_stop = placed
+                        summary["spent"] = round(
+                            summary["spent"] + summary["place"].get("spent", 0.0), 6
+                        )
+                        last = summary["place"].get("state", last)
+                place = summary.get("place", {})
                 if (
                     profile.ask_circles_after_edges
                     and not asked.no_circles
                     and whole
-                    and not {"unanswered", "refused"} & set(support)
+                    and searched
+                    and not {"unanswered", "refused"} & set(place)
                 ):
-                    # after the reread and the search, whose lines the circles
-                    # read
+                    # after the reread, the search and the placing, whose
+                    # lines the circles read
                     circled = asks.circles_after(
                         store,
                         versions.state(store, last) if last else kept,
@@ -838,21 +870,30 @@ def run(asked: Update, say: Say, edited: State | None = None) -> Ran:
             f"axiomation update: state {summary['state']['id']} is kept; the question "
             "on its circles is not answered: `axiomation circles PAPER --ask` asks it"
         )
+    if "unanswered" in summary.get("place", {}):
+        say.note(
+            f"axiomation update: state {summary['state']['id']} is kept; the placing "
+            "of its blocks' lines is not answered, nor the question on its circles "
+            "asked: `axiomation place PAPER --ask` asks it, then `axiomation "
+            "circles PAPER --ask`"
+        )
     if "unanswered" in summary.get("support", {}):
         say.note(
             f"axiomation update: state {summary['state']['id']} is kept; the search "
-            "for its claims' support is not answered, nor the question on its "
-            "circles asked: `axiomation support PAPER --ask` asks it, then "
-            "`axiomation circles PAPER --ask`"
+            "for its claims' support is not answered, nor the placing and the "
+            "question on its circles asked: `axiomation support PAPER --ask` asks "
+            "it, then `axiomation place PAPER --ask` and `axiomation circles PAPER "
+            "--ask`"
         )
     if "unanswered" in summary.get("reread", {}):
         say.note(
             f"axiomation update: state {summary['state']['id']} is kept; the reread "
             "of its stale marks is not answered, nor the search for its claims' "
-            "support and the question on its circles asked: `axiomation reread "
-            "PAPER --ask` asks it, then `support --ask` and `circles --ask`"
+            "support, the placing and the question on its circles asked: "
+            "`axiomation reread PAPER --ask` asks it, then `support --ask`, "
+            "`place --ask` and `circles --ask`"
         )
-    if Stop.BREACH in (reread_stop, support_stop, circles_stop):
+    if Stop.BREACH in (reread_stop, support_stop, place_stop, circles_stop):
         return Ran(Exit.BREACH)
     stopped = result.stopped
     if stopped is not None:
@@ -1270,6 +1311,7 @@ def _update_dry_run(
     mapped: Mapped | None = None,
     rereads_with: seating.QueueSeats | None = None,
     support_with: seating.QueueSeats | None = None,
+    place_with: seating.QueueSeats | None = None,
     circles_with: seating.QueueSeats | None = None,
 ) -> dict[str, Any]:
     """`update --dry-run`, naming the kept state it starts from
@@ -1285,8 +1327,8 @@ def _update_dry_run(
     seats), the reread if it fires, on the owners of the state it starts
     from: its marks come from session 1's answer, so no owner is known yet;
     and so, where it ends with the search for its claims' support
-    (`support_with`), that, and with the circles' question
-    (`circles_with`), that.
+    (`support_with`), that, with the placing (`place_with`), that, and
+    with the circles' question (`circles_with`), that.
     `round_estimate` sums them, each step at the price it would fire at,
     and `round_expected` each session times what like runs cost in the
     store (`like_runs`), each queue at what its tasks cost. Writes nothing;
@@ -1405,12 +1447,14 @@ def _update_dry_run(
             counted(question.template.name, cost)
     reread = asks.reread_priced(store, started, rereads_with)
     searched = asks.support_priced(store, started, support_with)
+    placed = asks.place_priced(store, started, place_with)
     circled = asks.circles_priced(store, started, circles_with)
     vocabulary = _vocabulary_priced(mapped, agents, answers)
     # the queues are priced by what their tasks cost, as they are expected to
     for queued in (
         reread.get("reread_if_it_fires"),
         searched.get("support_if_it_fires"),
+        placed.get("place_if_it_fires"),
         circled.get("circles_if_it_fires"),
     ):
         round_price[0] += queued or 0.0
@@ -1445,6 +1489,7 @@ def _update_dry_run(
         **second,
         **reread,
         **searched,
+        **placed,
         **circled,
         **vocabulary,
         # each part as it would fire, and that by what like runs cost
@@ -1483,7 +1528,7 @@ def _update_dry_run_lines(dry: Mapping[str, Any]) -> str:
             f"  the follow-up session: {dry['followup_owners']} blocks, "
             + dollars(dry["followup_estimate"])
         )
-    for name in ("reread", "support", "circles"):
+    for name in FOLLOW_UPS:
         if f"{name}_if_it_fires" not in dry:
             continue
         price = dry[f"{name}_if_it_fires"]
@@ -1604,6 +1649,7 @@ def _update_arguments(update: argparse.ArgumentParser) -> None:
     )
     no_reread_argument(update)
     no_search_argument(update)
+    no_place_argument(update)
     no_circles_argument(update)
     update.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
     update.add_argument("--json", action="store_true", help=SUMMARY_JSON_HELP)

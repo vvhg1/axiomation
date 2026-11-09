@@ -6,7 +6,8 @@ is a tag on `main`.
 ## 0.1.1 (2026-11-08)
 
 Fixes to the review queues, the cited works' search and the README's
-banner, and a switch to read the cited works from their PDFs.
+banner, a switch to read the cited works from their PDFs, and lines that
+leave from a part of their block.
 
 - **A review queue resumes.** A `citationcheck`, `methods` or
   `fieldresults` session that settled a finding could not be resumed:
@@ -33,6 +34,15 @@ banner, and a switch to read the cited works from their PDFs.
   run.
 - **The README's banner** shows on PyPI, and on GitHub follows the theme
   GitHub is set to. It says review, not verification.
+- **A line can leave from a part of its block.** An edge naming a part
+  still took in the lines of the block's other sentences, so a claim
+  could rest on premises that part never wrote. A uses line may now name
+  the part it leaves from, `→ uses [<part>] T`, and an edge onto that part
+  takes in its lines alone. `place --ask` has the edges agent place a
+  block's lines; a build and an update run it before the circles
+  (`--no-place` skips it). A profile of your own whose edges agent is not
+  on Claude Code must set `place_lines_after_edges = false`. A store
+  holding such a line is not read by 0.1.0.
 
 ## 0.1.0 (2026-11-07)
 

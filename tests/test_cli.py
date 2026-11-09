@@ -1016,6 +1016,7 @@ MIXED = """[mixed]
 judge_boundaries = true
 reread_marks_after_update = false
 search_support_after_edges = false
+place_lines_after_edges = false
 ask_circles_after_edges = false
 [mixed.boundaries_judge]
 harness = "claude-code"
@@ -1199,7 +1200,8 @@ def _profile_text(name: str, settings: str, **agents: str) -> str:
     # and run on claude-code alone
     text = (
         f"[{name}]\n{settings}reread_marks_after_update = false\n"
-        "search_support_after_edges = false\nask_circles_after_edges = false\n"
+        "search_support_after_edges = false\nplace_lines_after_edges = false\n"
+        "ask_circles_after_edges = false\n"
     )
     # The edges are not these tests' stage: the groups' agent.
     agents.setdefault("edges", agents["groups"])

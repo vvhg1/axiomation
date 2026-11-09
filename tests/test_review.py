@@ -4119,6 +4119,55 @@ def test_a_uses_line_replaces_its_owner_s_line_onto_the_target_and_widens_it() -
     assert rf.corrected(written, line('→ uses v · "by v"')) == []
 
 
+def test_a_uses_line_keeps_the_parts_its_block_s_lines_leave_from() -> None:
+    """Uses lines onto one target from disjoint parts stand apart: a
+    review's line leaving from a part replaces the line leaving from it,
+    never its sibling's; one leaving from the block whole replaces each,
+    and is given leaving from all their parts. It leaves from each part the
+    line it replaces left from, and a line from the block whole is never
+    narrowed to a part."""
+    written = {
+        "j": [
+            '→ uses [pi] t · "pi is W/Z"',
+            '→ uses [phi] t · "phi is -log W"',
+            '→ uses u · "by u"',
+            '→ uses [a] v assumed · "if v"',
+        ]
+    }
+
+    def line(text: str) -> rf.EdgeLine:
+        return rf.EdgeLine(1, "j", text)
+
+    one = line('→ uses [pi] t · "pi is W/Z" — W and Z')
+    assert rf.corrected(written, one) == ['→ uses [pi] t · "pi is W/Z"']
+    assert rf.narrowed(one, rf.corrected(written, one)) is None
+    whole = line('→ uses t · "pi is W/Z"')
+    assert rf.corrected(written, whole) == [
+        '→ uses [pi] t · "pi is W/Z"',
+        '→ uses [phi] t · "phi is -log W"',
+    ]
+    assert rf.narrowed(whole, rf.corrected(written, whole)) is None
+    # given, it leaves from both parts the lines it replaces left from
+    assert rf.kept_leaving(whole, rf.corrected(written, whole)).line == (
+        '→ uses [pi, phi] t · "pi is W/Z"'
+    )
+    lone = line('→ uses u [x] · "by u"')
+    assert rf.kept_leaving(lone, rf.corrected(written, lone)) == lone
+    fewer = line('→ uses [pi] t · "pi or phi"')
+    both = rf.EdgeLine(1, "j", '→ uses [pi, phi] t · "pi or phi"')
+    assert rf.narrowed(fewer, rf.corrected(written, both)) == (
+        "j → uses t: leaves from each part j's line onto t left from: [phi]"
+    )
+    placed = line('→ uses [x] u · "by u"')
+    assert "leaves from j whole: a line leaving from parts would narrow it" in (
+        rf.narrowed(placed, rf.corrected(written, placed)) or ""
+    )
+    # an assumed line's source bracket names claims: it leaves from the
+    # block whole, and meets every line onto its target
+    assumed = line('→ uses [b] v assumed · "if v"')
+    assert rf.corrected(written, assumed) == ['→ uses [a] v assumed · "if v"']
+
+
 #: The proof's uses line onto the definition, widened from its part to the
 #: whole: a second line onto one target, which replaces the first.
 WIDER = (

@@ -682,15 +682,19 @@ def like_words(like: LikeRuns) -> str:
 
 def priced_words(kind: str, model: str, price: Price, per: str) -> str:
     """A step's price as a dry run shows it: its session's start, fitted on
-    recorded runs, and a task's, measured in this store where it can be."""
+    recorded runs (another step's, where it has none of its own yet), and a
+    task's, measured in this store where it can be."""
+    fitted = (
+        "fitted on recorded runs"
+        if price.like is None
+        else f"fitted on the {price.like}'s recorded runs"
+    )
     how = (
-        f"what {price.tasks} of its tasks in this store cost"
-        if price.tasks
-        else "fitted on recorded runs"
+        f"what {price.tasks} of its tasks in this store cost" if price.tasks else fitted
     )
     return (
-        f"  {kind} on {model}: ${price.start:.4f} its session's start, fitted "
-        f"on recorded runs; ${price.task:.4f} {per}, {how}"
+        f"  {kind} on {model}: ${price.start:.4f} its session's start, {fitted}; "
+        f"${price.task:.4f} {per}, {how}"
     )
 
 

@@ -484,6 +484,26 @@ because the paper argues in a circle: the end names a whole block
 holding a definition, or no claim of several. An edit naming the part
 or claim the line relies on breaks it, and an about line of a block of
 several claims that restates none of them says so, `→ about [-] T`.
+Naming a content part walks its block in place of asking its claims;
+the walk takes in that part's lines alone only where the block's own
+lines name the parts they leave from (`→ uses [<part>] T`, [the
+model](model.md) §§ 3, 9): until one does, the whole block is walked,
+each of its sentences' lines with it. Name the part each line leaves
+from, cutting a part for a sentence where needed, and a part written in
+terms of another uses it, `→ uses [<part>] <block> [<other part>]`.
+
+`place` lists the blocks a line enters at a part whose own lines name no
+part they leave from, where the walk takes in more than that part names.
+`place --ask` has the profile's edges agent take each one no word reads
+whole (or those named) as a task, one at a time, and answer it:
+`placed`, naming the parts each line leaves from (or the block whole),
+adding a part for a sentence a line leaves from, and the parts each part
+writes, given at the end as one edges edit; or
+`whole`, filed with why, not asked again until the block's words, parts
+or lines change. It only places: no line's target, quote or target end
+changes, and a line you wrote stays as written. A build and an update
+end with it, after the search and before the circles, unless the profile
+turns it off; `--no-place` skips it once.
 
 `circles --ask` has the profile's edges agent take every circle no word
 holds real (or those named by their key's prefix) as a task, one at a
@@ -492,7 +512,8 @@ at the end as one edges edit), or `real`, filed with why and what you
 should change. The answer may only narrow: it never takes a line off,
 widens an end or adds support. `check` counts the circles agents alone
 read real, for you to audit. A build ends with this queue, and an
-update after its reread and its search, from what is left of
+update after its reread, its search and its placing, from what is left
+of
 `--budget`, unless the profile turns it off; `--no-circles` skips it
 once.
 
@@ -500,9 +521,14 @@ once.
 axiomation open PAPER --kind circle                  # each circle once, the heaviest first
 axiomation circles PAPER --ask --dry-run              # the question on every circle not read real, priced
 axiomation circles PAPER --ask --budget 4            # its narrowed ends an edges edit; a real circle filed
+axiomation place PAPER                                # the blocks to place, each read whole or not
+axiomation place PAPER --ask --dry-run --prompts p/   # priced, with the brief and the tasks under p/
 axiomation change PAPER --part 'gain [g]: "g = the output over the input" (definition)' \
   --retract bound '→ uses gain · "the gain"' --add bound '→ uses gain [g] · "the gain"' \
   --reason "the bound relies on the gain's definition, not on its claim"
+axiomation change PAPER --part 'gain [h]: "h = the loss over the input" (definition)' \
+  --retract gain '→ uses noise · "the loss"' --add gain '→ uses [h] noise · "the loss"' \
+  --reason "only h's sentence relies on the noise"
 ```
 
 A section is named by its number, an unnumbered one by the number its
@@ -727,8 +753,9 @@ the claim itself. Each answer is checked as it is given. Once every
 claim is settled, the lines are given as the search's edges edit, which
 stands the claims argued, and each claim read unargued is filed with
 why. A search lapses when its claim's words change. A build and an
-update end with it, after the reread and before the circles, unless the
-profile turns it off; `--no-search` skips it once. Where the profile
+update end with it, after the reread and before the placing and the
+circles, unless the profile turns it off; `--no-search` skips it once.
+Where the profile
 names the steps' models, `support --ask` refuses `--model`, `--effort`
 and `--rates`.
 
@@ -1002,7 +1029,8 @@ axiomation sync PAPER --session argument --session citationcheck   # those revie
 `sync` runs `update` where the paper's text is ahead of the latest
 state; then, as the profile ends an update with them, `reread --ask` on
 the marks still open, `support --ask` on the claims standing unsupported
-no search read and `circles --ask` on the circles no word holds real
+no search read, `place --ask` on the blocks to place no word reads whole
+and `circles --ask` on the circles no word holds real
 (each asks nothing where there are none, and asks again what an
 update left unanswered); then `review` over the sessions the profile
 asks by default, or those `--session` names (a group too, `field` or
@@ -1248,7 +1276,9 @@ name a second claim of its block on it, the line names both (`→ about
 [a, b] T`); a change that adds a second is refused with the line it
 holds and, where one line can say what both say, the one to file in its
 place. Two justifies lines may stand apart, each naming claims of the
-target the other does not ([the model](model.md) § 3).
+target the other does not, and two uses lines, each leaving from parts
+of its block the other does not leave from (`→ uses [g] T`, `→ uses [h]
+T`; [the model](model.md) § 3).
 
 An edges `change` asks nothing, but each reading that rests on a line it
 adds or retracts lapses: the reader was not shown the graph as it now

@@ -500,6 +500,43 @@ def test_the_edge_half_carries_a_line_restating_none_only_when_set(
     assert not any("restates_none" in e for e in data["edges"][1:])
 
 
+def test_the_edge_half_carries_the_parts_a_line_leaves_from_only_when_set(
+    tmp_path: Path,
+) -> None:
+    """A uses line's source parts, entry ids as its target's are; a state's
+    sheet writes them back in the bracket after its kind, and the line's
+    name across states holds their words."""
+    from axiomation.exchange import edge_key, edges_payload, part_words
+    from axiomation.questions.edges_file import ExportLines
+
+    paper, cut, question, records, asked = _edges_of_the_synthetic_paper(tmp_path)
+    (entry,) = records.entries
+    uses = next(n for n, e in enumerate(records.edges) if e.kind.value == "uses")
+    edges = list(records.edges)
+    edges[uses] = replace(
+        edges[uses],
+        source=entry.block,
+        evidence=(entry.words,),
+        source_parts=(entry.label,),
+    )
+    leaving = replace(records, edges=tuple(edges))
+
+    data = edges_payload(paper.document, cut, leaving, asked, question.handles)
+
+    assert data["edges"][uses]["source_entries"] == ["def:gain [gain]"]
+    assert not any(
+        "source_entries" in e for n, e in enumerate(data["edges"]) if n != uses
+    )
+    names = {i: h for h, i in question.handles.items()}
+    line = ExportLines(data, lambda i: names.get(i, i)).edge_line(data["edges"][uses])
+    assert line.startswith("→ uses [gain] ")
+    words = part_words(leaving)
+    assert edge_key(edges[uses], words) != edge_key(records.edges[uses], words)
+    assert (
+        f"⊣ ⟦part⟧ {' '.join(entry.words.split())}" in edge_key(edges[uses], words)[4]
+    )
+
+
 def test_the_edge_half_carries_a_partial_and_a_declaration_only_when_set(
     tmp_path: Path,
 ) -> None:

@@ -92,7 +92,7 @@ import sys
 import threading
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -2571,6 +2571,15 @@ def _parts(m: re.Match[str]) -> set[str]:
     return {p.strip() for p in (m.group("parts") or "").split(",") if p.strip()}
 
 
+def _leaving(m: re.Match[str]) -> set[str]:
+    """The parts of its block a uses line leaves from, none for the block
+    whole: an assumed line's source bracket names claims, never parts."""
+    if "assumed" in (m.group("flag") or "").split():
+        return set()
+    own = {p.strip() for p in (m.group("own") or "").split(",") if p.strip()}
+    return own - {es.RESTATES_NONE}
+
+
 def _overlap(a: re.Match[str], b: re.Match[str]) -> bool:
     """Whether two justifies lines onto one target cover a claim in common:
     one naming no claim covers each (`docs/model.md` § 3)."""
@@ -2583,8 +2592,10 @@ def corrected(written: Mapping[str, Sequence[str]], line: EdgeLine) -> list[str]
     line replaces, one edge per source, kind and target: a justifies
     line's, J's lines onto the same T covering a claim it covers (one
     naming no claim covers each); a self mark's, the block's marks with the
-    same quote; an about or a uses line's, the block's line of its kind
-    onto the same target."""
+    same quote; an about line's, the block's about line onto the same
+    target; a uses line's, the block's uses lines onto the same target
+    leaving from a part it leaves from (one leaving from the block whole
+    meets each), since lines from disjoint parts stand apart."""
     m = es.EDGE.match(line.line)
     if m is None or m.group("kind") not in ("justifies", es.SELF, "about", "uses"):
         return []
@@ -2595,8 +2606,13 @@ def corrected(written: Mapping[str, Sequence[str]], line: EdgeLine) -> list[str]
             continue
         if m.group("kind") == "justifies":
             same = old.group("target") == m.group("target") and _overlap(old, m)
-        elif m.group("kind") in ("about", "uses"):
+        elif m.group("kind") == "about":
             same = old.group("target") == m.group("target")
+        elif m.group("kind") == "uses":
+            left, right = _leaving(old), _leaving(m)
+            same = old.group("target") == m.group("target") and (
+                not left or not right or bool(left & right)
+            )
         else:
             same = norm(old.group("evidence")) == norm(m.group("evidence"))
         if same:
@@ -2607,7 +2623,9 @@ def corrected(written: Mapping[str, Sequence[str]], line: EdgeLine) -> list[str]
 def narrowed(line: EdgeLine, replaced: Sequence[str]) -> str | None:
     """Why a uses line narrows the line it replaces onto its target, else
     None: a review widens what an edge relies on, so it names each part the
-    old line named, and a line naming none relies on all of its target."""
+    old line named, and a line naming none relies on all of its target;
+    and it leaves from each part the old line left from, a line leaving
+    from its block whole from every part."""
     m = es.EDGE.match(line.line)
     if m is None or m.group("kind") != "uses":
         return None
@@ -2616,6 +2634,19 @@ def narrowed(line: EdgeLine, replaced: Sequence[str]) -> str | None:
     for x in replaced:
         old = es.EDGE.match(x)
         assert old is not None
+        leaving, left = _leaving(m), _leaving(old)
+        if leaving and not left:
+            return (
+                f"{line.owner} → uses {target}: {line.owner}'s line onto {target} "
+                f"leaves from {line.owner} whole: a line leaving from parts "
+                "would narrow it; leave it, or name no part it leaves from"
+            )
+        if leaving and left - leaving:
+            return (
+                f"{line.owner} → uses {target}: leaves from each part "
+                f"{line.owner}'s line onto {target} left from: "
+                f"[{', '.join(sorted(left - leaving))}]"
+            )
         if not new:
             continue
         before = _parts(old)
@@ -2634,6 +2665,30 @@ def narrowed(line: EdgeLine, replaced: Sequence[str]) -> str | None:
     return None
 
 
+def kept_leaving(line: EdgeLine, replaced: Sequence[str]) -> EdgeLine:
+    """A review's uses line from its block whole, where every line it
+    replaces leaves from parts: given leaving from all of those, as they
+    stood. A review writes no source part; the lines it widens keep
+    theirs, so the block stays read by its parts."""
+    m = es.EDGE.match(line.line)
+    if m is None or m.group("kind") != "uses" or _leaving(m) or not replaced:
+        return line
+    if m.group("own") is not None or "assumed" in (m.group("flag") or "").split():
+        return line
+    found: dict[str, None] = {}
+    for x in replaced:
+        old = es.EDGE.match(x)
+        assert old is not None
+        left = _leaving(old)
+        if not left:
+            return line
+        own = (p.strip() for p in old.group("own").split(","))
+        found |= dict.fromkeys(p for p in own if p in left)
+    kind_end = m.end("kind")
+    given = f"{line.line[:kind_end]} [{', '.join(found)}]{line.line[kind_end:]}"
+    return replace(line, line=given)
+
+
 def edges_applied(shown: str, edges: Sequence[EdgeLine]) -> str | None:
     """The state's edges sheet as an agent edits it (`shown`) with the edge
     lines added, each line once, as an agent's edges edit gives them, a
@@ -2647,6 +2702,7 @@ def edges_applied(shown: str, edges: Sequence[EdgeLine]) -> str | None:
     problems = []
     for e in edges:
         replaced = corrected(written, e)
+        e = kept_leaving(e, replaced)
         problem = narrowed(e, replaced)
         if problem is not None:
             problems.append(problem)

@@ -138,7 +138,7 @@ from axiomation.exchange import (
     line_authors,
     line_key_from_json,
     line_keys,
-    named_claims_key,
+    named_ends_key,
     provenance,
     update_export,
     update_review,
@@ -538,17 +538,17 @@ def _section(cut: Cut, index: int) -> list[str]:
 def _with_known_parts(records: EdgeRecords) -> EdgeRecords:
     """`records` with an edge's parts dropped where the legend lost one
     (carry keeps such a line and reopens its source): the closure reads it
-    as onto the block whole."""
+    as onto the block whole, or from it whole."""
     known = {(e.block, e.label) for e in records.entries}
-    return dataclasses.replace(
-        records,
-        edges=tuple(
-            e
-            if all((e.target.name, p) in known for p in e.parts)
-            else dataclasses.replace(e, parts=())
-            for e in records.edges
-        ),
-    )
+
+    def kept(e: Edge) -> Edge:
+        if not all((e.target.name, p) in known for p in e.parts):
+            e = dataclasses.replace(e, parts=())
+        if not all((e.source, p) in known for p in e.source_parts):
+            e = dataclasses.replace(e, source_parts=())
+        return e
+
+    return dataclasses.replace(records, edges=tuple(kept(e) for e in records.edges))
 
 
 # --- step 5: the conditional reach ------------------------------------------------
@@ -3597,11 +3597,12 @@ def carried_origins(
             continue
         words = tuple(
             sorted(" ".join(anchors[e].split()) for e in target.get("entries", []))
-        ) + named_claims_key(
+        ) + named_ends_key(
             target.get("claims", ()),
             edge.get("source_claims", ()),
             bool(edge.get("restates_none")),
             bool(edge.get("assumed")),
+            [anchors[e] for e in edge.get("source_entries", [])],
         )
         named[("edge", source, edge["kind"], kind, name, words)] = edge["provenance"]
     # self marks and standings, named as `exchange.line_keys` names them,

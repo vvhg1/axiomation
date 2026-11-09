@@ -255,6 +255,26 @@ def test_each_aspect_s_basis_is_its_subject_s_one_hop(tmp_path) -> None:
     )
 
 
+def test_a_line_inside_its_block_is_no_edge_of_its_reading(tmp_path) -> None:
+    """A line from one part of t onto another says which part writes which:
+    a reading of t's claim reads t's text whole already, so the line is no
+    edge it rests on, and adding it lapses nothing."""
+    sibling = {
+        **edge("t", "uses", "t", "t [b]"),
+        "source_entries": ["t [a]"],
+    }
+    store, kept = built(tmp_path, graph(edges=[*EDGES, sibling]))
+    at = seen(store, kept)
+    n = kept.node_of
+    assert {
+        (e.kind, e.name, e.edge) for e in judgments.one_hop(at, Aspect.TRUE, [n("t")])
+    } == {
+        (BasisKind.NODE, n("t"), None),
+        (BasisKind.EDGE, n("t"), ("uses", n("d"))),
+        (BasisKind.NODE, n("d"), None),
+    }
+
+
 def test_a_subject_the_state_does_not_offer_is_refused(tmp_path) -> None:
     store, kept = built(tmp_path)
     at = seen(store, kept)

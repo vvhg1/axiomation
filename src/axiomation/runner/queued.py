@@ -435,23 +435,27 @@ class PriceError(ValueError):
 class Fitted:
     """A step's price fitted on recorded runs: on `model`, a session's
     start (its brief and the host's prompt written once, the call that
-    serves the first task) and each task's cost."""
+    serves the first task) and each task's cost; `like`, the step whose
+    runs they were recorded on, where not this step's own."""
 
     model: str
     start: float
     task: float
+    like: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Price:
     """What a step is expected to cost: its session's start and each task,
     and the sessions and tasks the task's cost was measured on in this
-    store (none: fitted)."""
+    store (none: fitted); `like`, the step whose runs the fit was recorded
+    on, where not its own."""
 
     start: float
     task: float
     sessions: int = 0
     tasks: int = 0
+    like: str | None = None
 
     def cost(self, tasks: int, sessions: int = 1) -> float:
         """A run of `tasks` tasks over `sessions` sessions: each session's
@@ -488,9 +492,13 @@ def price(store: RecordStore, template: str, model: str, fitted: Fitted) -> Pric
         return Price(0.0, spent / tasks, len(sessions), tasks)
     start = fitted.start * scale
     if not tasks:
-        return Price(start, fitted.task * scale)
+        return Price(start, fitted.task * scale, like=fitted.like)
     return Price(
-        start, max(spent - len(sessions) * start, 0.0) / tasks, len(sessions), tasks
+        start,
+        max(spent - len(sessions) * start, 0.0) / tasks,
+        len(sessions),
+        tasks,
+        fitted.like,
     )
 
 
